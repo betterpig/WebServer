@@ -71,6 +71,7 @@ int main(int argc,char *argv[])
     int port=atoi(argv[2]);
 
     connection_pool* connpool=connection_pool::GetInstance();
+    //init参数：ip，端口（0表示默认），数据库用户名，数据库密码，数据库名，连接池中连接个数
     connpool->init("localhost",0,"root","123","db",5);
 
     ThreadPool<HttpConn>* pool=nullptr;
