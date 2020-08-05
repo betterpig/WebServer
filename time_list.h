@@ -1,35 +1,24 @@
-#ifndef LST_TIMER//升序定时器链表
-#define LST_TIMER
+#ifndef TIME_LIST_H//升序定时器链表
+#define TIME_LIST_H
 
 #include <time.h>
-#include <netinet/in.h>
-#include "http_conn.h"
+#include "timer_base.h"
+
+#define TIMESLOT 10
 #define BUFFER_SIZE 64
-
-class UtilTimer//相当于链表中的节点结构体，它自己既保存了回调函数，又保存了用于回调函数的参数 userdata
-{
-public:
-    time_t expire;//任务的超时时间，绝对时间，即在什么时候终止
-    //回调函数是外部定义的，然后作为节点的成员
-    HttpConn* user_data;//在类UtilTimer中，又要用到client_data结构体来定义指针，二者互相使用
-    UtilTimer* prev;//指向前一个节点
-    UtilTimer* next;//指向后一个节点
-
-public:
-    UtilTimer():prev(nullptr),next(nullptr) {}
-};
-
-class SortTimerList//定时器链表，升序，双向链表，带有头节点和尾节点
+class TimerBase;
+struct ListTimer;
+class SortTimerList : public TimerBase//定时器链表，升序，双向链表，带有头节点和尾节点
 {
 private:
-    UtilTimer* head;//头节点
-    UtilTimer* tail;//尾节点
+    ListTimer* head;//头节点
+    ListTimer* tail;//尾节点
 
 public:
     SortTimerList():head(nullptr),tail(nullptr) {}//构造函数
-    ~SortTimerList()//析构函数，释放每个节点的内存
+    ~SortTimerList () //析构函数，释放每个节点的内存
     {
-        UtilTimer* tmp=head;
+        ListTimer* tmp=head;
         while(tmp)
         {
             head=tmp->next;
@@ -37,8 +26,10 @@ public:
             tmp=head;
         }
     }
-    void AddTimer(UtilTimer* timer)//添加一个定时器节点，参数是节点指针
+    void* AddTimer(HttpConn* hc) override//添加一个定时器节点，参数是节点指针
     {
+        int set_time=time(nullptr)+3*TIMESLOT;//设置闹钟，该定时器将在3*TIMESLOT后到期，届时将关闭该连接
+        ListTimer*timer=new ListTimer(hc,set_time);//将定时器与该连接绑定
         if(!timer)//指针无效
             return;
         if(!head)//链表为空，直接令head和tail等于传入节点指针就好了
@@ -54,13 +45,15 @@ public:
             return;
         }
         AddTimer(timer,head);//其他情况，调用重载函数，找到合适的位置插入，保证升序
+        return timer;
     }
 
-    void AdjustTimer(UtilTimer* timer)//定时器的终止时间改变，需要调整在链表中的位置，只考虑终止时间变长的情况，需要往链表尾部移动
+    void AdjustTimer(void* timer_) override//定时器的终止时间改变，需要调整在链表中的位置，只考虑终止时间变长的情况，需要往链表尾部移动
     {
+        ListTimer* timer=(ListTimer*) timer_;
         if(!timer)
             return;
-        UtilTimer* tmp=timer->next;
+        ListTimer* tmp=timer->next;
         if(!tmp || (timer->expire < tmp->expire))//需要改变的定时器节点已经是最后一个节点，或者定时器的终止时间仍然小于它后一个节点，则不需要改变位置
             return;
         if(timer==head)//需要改变的定时器节点是头节点，且它的新的终止时间大于后一个节点
@@ -78,8 +71,9 @@ public:
         }
     }
 
-    void DeleteTimer(UtilTimer* timer)//当某个定时器到点了，完成了回调函数，就把它从链表中删除
+    void DeleteTimer(void* timer_) override//当某个定时器到点了，完成了回调函数，就把它从链表中删除
     {
+        ListTimer* timer=(ListTimer*) timer_;
         if(!timer)
             return;
         if((timer==head) && (timer==tail))//链表只有一个节点
@@ -110,13 +104,13 @@ public:
         delete timer;
     }
 
-    void Tick()//SIGALRM信号每次触发就会子啊信号处理函数中执行一次tick函数，处理链表上到期的任务
+    void Tick() override//SIGALRM信号每次触发就会子啊信号处理函数中执行一次tick函数，处理链表上到期的任务
     {
         if(!head)//链表为空
             return;
         printf("timer tick\n");
         time_t cur=time(nullptr);//获得当前时间
-        UtilTimer* tmp=head;//从头节点开始检查
+        ListTimer* tmp=head;//从头节点开始检查
         while(tmp)//因为是升序排列，所以所有到期的定时器都是按它们原本应该的顺序执行其回调函数
         {
             if(cur<tmp->expire)//如果当前节点的终止时间大于当前系统时间，说明该节点往后的定时器节点都没到期，因为升序！
@@ -128,13 +122,16 @@ public:
             delete tmp;
             tmp=head;
         }
+        alarm(TIMESLOT);
     }
 
 private:
-    void AddTimer(UtilTimer* timer,UtilTimer* lst_head)//对于插入节点在链表中间的
+    void AddTimer(void* timer_,void* lst_head_)//对于插入节点在链表中间的
     {
-        UtilTimer* prev=lst_head;//插入节点保证在lst_head后面
-        UtilTimer* tmp=prev->next;
+        ListTimer* timer=(ListTimer*) timer_;
+        ListTimer* lst_head=(ListTimer*) lst_head_;
+        ListTimer* prev=lst_head;//插入节点保证在lst_head后面
+        ListTimer* tmp=prev->next;
         while(tmp)
         {
             if(timer->expire<tmp->expire)//把要插入的节点插入到第一个终止时间比它大的节点之前

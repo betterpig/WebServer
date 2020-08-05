@@ -12,7 +12,7 @@
 
 #include "thread_pool.h"
 #include "http_conn.h"
-#include "lst_timer.h"
+#include "time_list.h"
 #include "connection_pool.h"
 #include "log.h"
 
@@ -154,18 +154,14 @@ int main(int argc,char *argv[])
                     continue;
                 }
                 users[connection_fd].Init(connection_fd,client_address);
-                UtilTimer* timer=new UtilTimer;//为该连接新建定时器节点
-                timer->user_data=&users[connection_fd];//将定时器与该连接绑定
-                time_t cur=time(nullptr);
-                timer->expire=cur+3*TIMESLOT;//设置闹钟，该定时器将在3*TIMESLOT后到期，届时将关闭该连接
-                users[connection_fd].timer=timer;
-                timer_lst.AddTimer(timer);//将该定时器节点加到链表中
+                users[connection_fd].timer=timer_lst.AddTimer(&users[connection_fd]);//将该定时器节点加到链表中
+                
             }
             else if(events[i].events & (EPOLLRDHUP | EPOLLERR))
             {//连接被对方关闭、管道的写端关闭、错误
                 users[sockfd].CloseConn();
                 if(users[sockfd].timer)
-                    timer_lst.DeleteTimer(users[sockfd].timer);
+                    timer_lst.DeleteTimer(users[sockfd].timer);//删除定时器后，应该也要把客户对象中的timer指针置空，否则timer将成为野指针
             }
             else if(sockfd==sigpipe[0] && events[i].events&EPOLLIN)
             {
@@ -233,7 +229,7 @@ int main(int argc,char *argv[])
         if(timeout)
         {
             timer_lst.Tick();//处理到期的定时器
-            alarm(TIMESLOT);//重新设置闹钟，在TIMESLOT时间后，系统将向进程发出SIGALRM信号
+            //alarm(TIMESLOT);//重新设置闹钟，在TIMESLOT时间后，系统将向进程发出SIGALRM信号
             timeout=false;
         }
     }

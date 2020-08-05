@@ -28,9 +28,7 @@
 #include <string>
 using namespace std;
 
-class UtilTimer;
 class connection_pool;
-
 
 class HttpConn
 {
@@ -55,7 +53,7 @@ public:
 public:
     static int m_epollfd;//类的静态数据成员，将被所有同类对象所共享。所有socket上的事件都注册到同一个epoll内核事件表上，
     static int m_user_count;//统计用户数量
-    UtilTimer* timer;
+    void* timer;
     MYSQL* mysql;
 
 private:
