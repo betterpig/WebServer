@@ -12,16 +12,15 @@
 
 #include "thread_pool.h"
 #include "http_conn.h"
-#include "time_list.h"
+#include "timer_container.h"
 #include "connection_pool.h"
 #include "log.h"
 
 #define MAX_FD 65536
 #define MAX_EVENT_NUMBER 10000
-#define TIMESLOT 10000//
 #define ASYNLOG
 
-static SortTimerList timer_lst;//定时器容器
+
 static int sigpipe[2];
 extern int Addfd(int epollfd,int fd,bool oneshot);
 extern int Removdfd(int epollfd,int fd);
@@ -83,7 +82,7 @@ int main(int argc,char *argv[])
     {
         return 1;
     }
-
+    static TimerContainer timer_container(SORTLIST);//定时器容器
     HttpConn* users=new HttpConn[10000];//建立HTTP客户对象数组
     assert(users);
     users[0].GetDataBase(connpool);
@@ -154,14 +153,13 @@ int main(int argc,char *argv[])
                     continue;
                 }
                 users[connection_fd].Init(connection_fd,client_address);
-                users[connection_fd].timer=timer_lst.AddTimer(&users[connection_fd]);//将该定时器节点加到链表中
+                users[connection_fd].timer=timer_container.AddTimer(&users[connection_fd],3*TIMESLOT);//将该定时器节点加到链表中
                 
             }
             else if(events[i].events & (EPOLLRDHUP | EPOLLERR))
             {//连接被对方关闭、管道的写端关闭、错误
+                timer_container.DeleteTimer(users[sockfd].timer);
                 users[sockfd].CloseConn();
-                if(users[sockfd].timer)
-                    timer_lst.DeleteTimer(users[sockfd].timer);//删除定时器后，应该也要把客户对象中的timer指针置空，否则timer将成为野指针
             }
             else if(sockfd==sigpipe[0] && events[i].events&EPOLLIN)
             {
@@ -196,40 +194,31 @@ int main(int argc,char *argv[])
                 if(users[sockfd].Read())//成功读取到HTTP请求
                 {
                     pool->Append(users+sockfd);//将该请求加入到工作队列中
-                    if(users[sockfd].timer)
-                    {
-                        users[sockfd].timer->expire=time(nullptr)+3*TIMESLOT;
-                        timer_lst.AdjustTimer(users[sockfd].timer);
-                    }
+                    timer_container.AdjustTimer(users[sockfd].timer,3*TIMESLOT);
                 }
                 else
                 {
+                    timer_container.DeleteTimer(users[sockfd].timer);
                     users[sockfd].CloseConn();//读失败，关闭连接
-                    if(users[sockfd].timer)
-                        timer_lst.DeleteTimer(users[sockfd].timer);
                 }
             }
             else if(events[i].events & EPOLLOUT)
             {
                 if(!users[sockfd].Write())//写失败
                 {
+                    timer_container.DeleteTimer(users[sockfd].timer);
                     users[sockfd].CloseConn();//关闭连接
-                    if(users[sockfd].timer)
-                        timer_lst.DeleteTimer(users[sockfd].timer);
                 }
-                if(users[sockfd].timer)
-                {
-                    users[sockfd].timer->expire=time(nullptr)+3*TIMESLOT;
-                    timer_lst.AdjustTimer(users[sockfd].timer);
-                }
+                else
+                    timer_container.AdjustTimer(users[sockfd].timer,3*TIMESLOT);
             }
             else 
                 continue;
         }
         if(timeout)
         {
-            timer_lst.Tick();//处理到期的定时器
-            //alarm(TIMESLOT);//重新设置闹钟，在TIMESLOT时间后，系统将向进程发出SIGALRM信号
+            timer_container.Tick();//处理到期的定时器
+            alarm(TIMESLOT);
             timeout=false;
         }
     }

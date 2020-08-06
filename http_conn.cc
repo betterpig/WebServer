@@ -11,7 +11,7 @@ const char* error_404_title="Not Found";
 const char* error_404_form="The requested file was not found on this server.\n";
 const char* error_500_title="Internal Error";
 const char* error_500_form="There was an unusual problem serving the requested file.\n";
-const char* doc_root="/home/sing/code/fight/my_web_server/root";
+const char* doc_root="/home/sing/code/WebServer/root";
 
 map<string,string> users;
 Locker locker;
@@ -60,6 +60,7 @@ void HttpConn::CloseConn(bool real_close)
         m_sockfd=-1;
         m_user_count--;//客户数量减一
     }
+    timer=nullptr;//HttpConn对象负责把自己的指针置空
 }
 
 void HttpConn::Init(int sockfd,const sockaddr_in& addr)
