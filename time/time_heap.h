@@ -1,7 +1,15 @@
-#ifndef TIME_HEAP
+#ifndef TIME_HEAP//时间堆
 #define TIME_HEAP
 
 #include "timer_base.h"
+
+struct HeapTimer//基于最小堆的定时器容器的定时器结构体
+{
+    HttpConn* user_data;
+    time_t expire;
+    int index;//在最小堆数组中的索引
+    HeapTimer(HttpConn* hc,int set_time):user_data(hc),expire(set_time),index(0) {}
+};
 
 class TimeHeap:public TimerContainerBase
 {
@@ -86,6 +94,13 @@ public:
             array[0]->user_data->CloseConn();
             Pop();
         }
+        if(empty())
+            alarm(TIMESLOT);
+        else
+        {
+            int time_interval=top()->expire-cur;
+            alarm(time_interval);
+        }
     }
 
     bool empty() const { return cur_size==0;}
@@ -107,7 +122,8 @@ private:
             delete array[0];
             array[0]=array[cur_size];//先把数组最后一个元素放到堆顶
             array[cur_size--]=nullptr;//再将最后一个元素置为空指针
-            PercolateDown(0);//再对堆顶元素做下沉操作
+            if(cur_size>1)
+                PercolateDown(0);//再对堆顶元素做下沉操作
         }
     }
 

@@ -12,7 +12,7 @@
 
 #include "thread_pool.h"
 #include "http_conn.h"
-#include "timer_container.h"
+#include "time/timer_container.h"
 #include "connection_pool.h"
 #include "log.h"
 
@@ -82,7 +82,7 @@ int main(int argc,char *argv[])
     {
         return 1;
     }
-    static TimerContainer timer_container(SORTLIST);//定时器容器
+    static TimerContainer timer_container(WHEEL);//定时器容器
     HttpConn* users=new HttpConn[10000];//建立HTTP客户对象数组
     assert(users);
     users[0].GetDataBase(connpool);
@@ -218,7 +218,6 @@ int main(int argc,char *argv[])
         if(timeout)
         {
             timer_container.Tick();//处理到期的定时器
-            alarm(TIMESLOT);
             timeout=false;
         }
     }

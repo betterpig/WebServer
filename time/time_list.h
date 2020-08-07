@@ -1,11 +1,17 @@
-#ifndef TIME_LIST_H//升序定时器链表
+#ifndef TIME_LIST_H//基于升序链表的定时器容器
 #define TIME_LIST_H
 
 #include "timer_base.h"
 
-#define BUFFER_SIZE 64
+struct ListTimer//基于升序链表的定时器容器的定时器结构体
+{
+    HttpConn* user_data;//客户连接类指针
+    time_t expire;//任务的超时时间，绝对时间，即在什么时候终止
+    ListTimer* prev;//指向前一个节点
+    ListTimer* next;//指向后一个节点
 
-class TimerBase;
+    ListTimer(HttpConn* hc,int set_time):user_data(hc),expire(set_time),prev(nullptr),next(nullptr) {}
+};
 
 class SortTimerList : public TimerContainerBase//定时器链表，升序，双向链表，带有头节点和尾节点
 {
@@ -104,7 +110,10 @@ public:
     void Tick() override//SIGALRM信号每次触发就会子啊信号处理函数中执行一次tick函数，处理链表上到期的任务
     {
         if(!head)//链表为空
+        {
+            alarm(TIMESLOT);
             return;
+        }
         time_t cur=time(nullptr);//获得当前时间
         ListTimer* tmp=head;//从头节点开始检查
         while(tmp)//因为是升序排列，所以所有到期的定时器都是按它们原本应该的顺序执行其回调函数
@@ -118,6 +127,7 @@ public:
             delete tmp;
             tmp=head;
         }
+        alarm(TIMESLOT);
     }
 
 private:

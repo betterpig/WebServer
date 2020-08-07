@@ -21,7 +21,6 @@
 #include <stdarg.h>
 #include <sys/uio.h>
 #include <string>
-//#include "lst_timer.h"
 #include "locker.h"
 #include <mysql/mysql.h>
 #include <map>

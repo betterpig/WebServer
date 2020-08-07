@@ -1,9 +1,9 @@
-# 微型web服务器程序（接近原始版本）
+# 微型web服务器程序（more C++ version）
 
 **C++ & HTML**
 
 
-这是一个微型web服务器程序，大部分代码参照了游双的《Linux高性能服务器编程》，另外一部分参照了[TinyWebServer](https://github.com/qinguoyi/TinyWebServer "TinyWebServer")和公众号两猿社的文章[Web服务器详解](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=MzAxNzU2MzcwMw==&action=getalbum&album_id=1339230165934882817&subscene=159&subscene=&scenenote=https%3A%2F%2Fmp.weixin.qq.com%2Fs%2FBfnNl-3jc_x5WPrWEJGdzQ#wechat_redirect "Web服务器详解"),包括数据库连接池、阻塞队列和日志等。另外加上了我自己对于程序的理解和一些改进。
+本分支在原始版本的基础上进行了改进，使程序结构更加清晰、使用更加方便，功能更加丰富、用到更多C++的语法和知识点。
 
 
 ## 使用方法
@@ -17,15 +17,15 @@
 
 - 将main.cc中数据库连接池初始化参数修改为你自己的数据库用户名、用户密码和数据库名称
 
-`connpool->init("localhost",0,"root","123","db",5);`
+    `connpool->init("localhost",0,"root","123","db",5);`
 
 - 将http_conn.cc文件中的html文件所在的根目录改成你系统中该root文件夹所在路径
 
-`const char* doc_root="/home/sing/code/fight/my_web_server/root";`
+    `const char* doc_root="/home/sing/code/fight/my_web_server/root";`
 
 ### 编译
 
-在Makefile所在文件夹运行命令行
+在Makefile所在文件夹运行命令行  
 
 `make`
 
@@ -47,7 +47,7 @@
 - I/O复用（epoll）
 - 统一事件源（socketpair管道）
 
-### 结构
+### 主要逻辑
 #### 主线程 epoll监听所有事件
 - 连接描述符可读->初始化该连接描述符对应的客户对象，添加该连接的定时器
 - 异常事件->关闭连接
@@ -64,3 +64,7 @@
 1. 阻塞等待请求到来
 2. 从请求队列中取出客户对象指针，对其中的读缓冲区内容进行解析和处理
 3. 将响应写入客户对象的写缓冲区中，使epoll改为监听该连接描述符上的可写事件
+
+## 改进
+
+ 1. 定时器容器整合：在原有基于升序链表的定时器容器类的基础上，加上了时间堆和时间轮。利用简单工厂模式，实现了三种定时器容器在使用方法上的统一。现在，只需要给定类型，就可以生成相应的定时器容器，完成定时器的添加、删除、调整和Tick。

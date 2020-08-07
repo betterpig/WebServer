@@ -1,13 +1,24 @@
-#ifndef TIME_WHELL_TIMER
+#ifndef TIME_WHELL_TIMER//时间轮
 #define TIME_WHELL_TIMER
 
 #include "timer_base.h"
+
+struct WheelTimer//时间轮定时器容器的定时器结构体
+{
+    HttpConn* user_data;
+    int rotation;//记录定时器在转多少圈后生效
+    int time_slot;//记录定时器属于哪个槽
+    WheelTimer* next;
+    WheelTimer* prev;
+
+    WheelTimer(HttpConn* hc,int rot,int ts):user_data(hc),rotation(rot),time_slot(ts),next(nullptr),prev(nullptr) {}
+};
 
 class TimeWheel:public TimerContainerBase
 {
 private:
     static const int N=60;//槽数
-    static const int SI=5;//槽间隔
+    static const int SI=TIMESLOT;//槽间隔
     WheelTimer* slots[N];//链表数组
     int cur_slot;//当前所在的槽
 public:
@@ -35,11 +46,11 @@ public:
         int ticks=delay/SI;
         int rotation=ticks/N;//根据槽间隔算需要转多少圈才触发该定时器
         int ts=(cur_slot+(ticks%N))%N;//计算该定时器应该放在哪个槽：当前槽+增量槽再对总槽数取摸
-        WheelTimer* timer=new WheelTimer(rotation,ts);//新建定时器，给定圈数和槽位
+        WheelTimer* timer=new WheelTimer(hc,rotation,ts);//新建定时器，给定圈数和槽位
 
         if(!slots[ts])//如果要插入的槽为空，那把该定时器作为头节点
             slots[ts]=timer;
-        else//否则 把定时器插到最前面：头插法 ？为什么不像升序链表那样按时间前后插入
+        else//否则 把定时器插到最前面：头插法 ？为什么不像升序链表那样按时间先后插入
         {
             timer->next=slots[ts];
             slots[ts]->prev=timer;
@@ -136,6 +147,7 @@ public:
             }
         }
         cur_slot=++cur_slot%N;//当前槽运行到下一个槽
+        alarm(TIMESLOT);
     }
 };
 
