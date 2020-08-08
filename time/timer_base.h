@@ -13,7 +13,7 @@ class TimerContainerBase//定时器容器抽象基类：统一函数接口
 friend class TimerContainer;
 public:
     TimerContainerBase(){}
-    //virtual ~TimerBase()=0;
+    virtual ~TimerContainerBase() {}
     virtual void* AddTimer(HttpConn* hc,unsigned int delay)=0;//添加定时器
     virtual void AdjustTimer(void* timer_,unsigned int delay)=0;//调整（延后）定时器
     virtual void DeleteTimer(void* timer_)=0;//删除定时器

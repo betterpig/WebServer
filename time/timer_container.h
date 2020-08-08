@@ -29,6 +29,10 @@ public:
             break;
         }
     }
+    ~TimerContainer()
+    {
+        delete timer_ptr;
+    }
     //通过基类指针，在运行时调用实际类型的对应函数
     void* AddTimer(HttpConn* hc,unsigned int delay) {return timer_ptr->AddTimer(hc,delay);}
     void DeleteTimer(void* timer) {timer_ptr->DeleteTimer(timer);}

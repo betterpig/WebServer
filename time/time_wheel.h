@@ -27,7 +27,7 @@ public:
         for(int i=0;i<N;++i)
             slots[i]=NULL;//初始化每个槽的头节点
     }
-    ~TimeWheel()
+    virtual ~TimeWheel() override
     {
         for(int i=0;i<N;++i)//遍历每个槽
         {
@@ -41,7 +41,7 @@ public:
         }
     }
 
-    void* AddTimer(HttpConn* hc,unsigned int delay) override//根据定时值创建定时器，并插到合适的槽中
+    virtual void* AddTimer(HttpConn* hc,unsigned int delay) override//根据定时值创建定时器，并插到合适的槽中
     {
         int ticks=delay/SI;
         int rotation=ticks/N;//根据槽间隔算需要转多少圈才触发该定时器
@@ -59,7 +59,7 @@ public:
         return timer;
     }
     
-    void AdjustTimer(void* timer_,unsigned int delay) override
+    virtual void AdjustTimer(void* timer_,unsigned int delay) override
     {
         if(!timer_)
             return;
@@ -92,7 +92,7 @@ public:
         }
     }
 
-    void DeleteTimer(void* timer_) override
+    virtual void DeleteTimer(void* timer_) override
     {
         if(!timer_)
             return;
@@ -114,7 +114,7 @@ public:
         }
     }
 
-    void Tick() override
+    virtual void Tick() override
     {
         WheelTimer* tmp=slots[cur_slot];//当前槽的链表的头节点
         while(tmp)

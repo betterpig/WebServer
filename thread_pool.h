@@ -15,7 +15,7 @@ private:
     int m_thread_number;//线程池中的线程数量
     int m_max_requests;//请求队列中的最大请求数
     pthread_t* m_threads;//线程池id数组
-    std::list<T*> m_work_queue;//请求队列，用链表表示队列
+    std::queue<T*> m_work_queue;//请求队列，用链表表示队列
     Locker m_queue_locker;//保护请求队列的互斥锁
     Sem m_queue_stat;//表明是否有任务需要处理的信号量
     bool m_stop;//线程结束的标志
@@ -41,7 +41,9 @@ ThreadPool<T>::ThreadPool(connection_pool* connpool,int thread_number,int max_re
     for(int i=0;i<thread_number;++i)
     {
         printf("create the %dth thread\n",i);
-        if(pthread_create(m_threads+i,nullptr,Worker,this)!=0)//创建线程，把线程id存放在m_threads数组中的第i个位置，该线程运行的函数是WOrker，参数是this（本对象？）
+        //在c++中，pthread_create函数中第三个参数必须指向静态函数，而类的静态函数不包含this指针，也就无法直接调用真正的线程执行函数run
+        //所以得增加worker函数作为入口，并将this指针作为参数传入，再在worker中通过this指针调用run函数
+        if(pthread_create(m_threads+i,nullptr,Worker,this)!=0)//创建线程，把线程id存放在m_threads数组中的第i个位置，该线程运行的函数是WOrker，参数是this
         {
             delete []m_threads;//创建线程失败，则删除整个线程数组并抛出异常
             throw std::exception();
@@ -71,14 +73,14 @@ bool ThreadPool<T>::Append(T* request)
         m_queue_locker.Unlock();
         return false;
     }
-    m_work_queue.push_back(request);//将请求放到队列最后
+    m_work_queue.push(request);//将请求放到队列最后
     m_queue_stat.Post();//将信号量+1
     m_queue_locker.Unlock();//解锁
     return true;
 }
 
 template<typename T>
-void* ThreadPool<T>::Worker(void* arg)//将对象指针传给线程,也就是说所有线程共享一个对象
+void* ThreadPool<T>::Worker(void* arg)
 {
     ThreadPool* pool=(ThreadPool*) arg;
     pool->Run();
@@ -98,7 +100,7 @@ void ThreadPool<T>::Run()
             continue;//重头开始等
         }
         T* request=m_work_queue.front();//取出队列头
-        m_work_queue.pop_front();//将队列头popk
+        m_work_queue.pop();//将队列头popk
         m_queue_locker.Unlock();//解锁
         if(!request)//请求为空
             continue;

@@ -26,14 +26,14 @@ public:
             array[i]=nullptr;//每个元素都置为空指针
     }
 
-    ~TimeHeap()
+    virtual ~TimeHeap() override
     {
         for(int i=0;i<cur_size;++i)
             delete array[i];//释放每个指针指向的定时器结构体
         delete []array;//释放指针数组这个动态分配内存
     }
 
-    void* AddTimer(HttpConn* hc,unsigned int delay) override
+    virtual void* AddTimer(HttpConn* hc,unsigned int delay) override
     {
         int set_time=time(nullptr)+delay;
         HeapTimer*timer=new HeapTimer(hc,set_time);
@@ -53,7 +53,7 @@ public:
         return timer;
     }
 
-    void AdjustTimer(void* timer_,unsigned int delay)
+    virtual void AdjustTimer(void* timer_,unsigned int delay)
     {
         if(!timer_)
             return;
@@ -62,7 +62,7 @@ public:
         PercolateDown(timer->index);
     }
 
-    void DeleteTimer(void* timer_) override
+    virtual void DeleteTimer(void* timer_) override
     {//最小堆只能删除最顶端数据
         if(!timer_)
             return;
@@ -81,7 +81,7 @@ public:
         }
     }
 
-    void Tick()
+    virtual void Tick()
     {
         time_t cur=time(nullptr);//获取当前时间
         while(!empty())//堆不空时
@@ -103,9 +103,8 @@ public:
         }
     }
 
-    bool empty() const { return cur_size==0;}
-
 private:
+    bool empty() const { return cur_size==0;}
     HeapTimer* top() const
     {
         if(empty())

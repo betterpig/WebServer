@@ -21,7 +21,7 @@ private:
 
 public:
     SortTimerList():head(nullptr),tail(nullptr) {}//构造函数
-    ~SortTimerList () //析构函数，释放每个节点的内存
+    virtual ~SortTimerList () override//析构函数，释放每个节点的内存
     {
         ListTimer* tmp=head;
         while(tmp)
@@ -31,7 +31,7 @@ public:
             tmp=head;
         }
     }
-    void* AddTimer(HttpConn* hc,unsigned int delay) override//添加一个定时器节点，参数是节点指针
+    virtual void* AddTimer(HttpConn* hc,unsigned int delay) override//添加一个定时器节点，参数是节点指针
     {
         int set_time=time(nullptr)+delay;//设置闹钟，该定时器将在3*TIMESLOT后到期，届时将关闭该连接
         ListTimer*timer=new ListTimer(hc,set_time);//将定时器与该连接绑定
@@ -50,7 +50,7 @@ public:
         AddTimer(timer,head);//其他情况，调用重载函数，找到合适的位置插入，保证升序
     }
 
-    void AdjustTimer(void* timer_,unsigned int delay) override//定时器的终止时间改变，需要调整在链表中的位置，只考虑终止时间变长的情况，需要往链表尾部移动
+    virtual void AdjustTimer(void* timer_,unsigned int delay) override//定时器的终止时间改变，需要调整在链表中的位置，只考虑终止时间变长的情况，需要往链表尾部移动
     {
         if(!timer_)
             return;
@@ -74,7 +74,7 @@ public:
         }
     }
 
-    void DeleteTimer(void* timer_) override//当某个定时器到点了，完成了回调函数，就把它从链表中删除
+    virtual void DeleteTimer(void* timer_) override//当某个定时器到点了，完成了回调函数，就把它从链表中删除
     {
         if(!timer_)
             return;
@@ -107,7 +107,7 @@ public:
         delete timer;
     }
 
-    void Tick() override//SIGALRM信号每次触发就会子啊信号处理函数中执行一次tick函数，处理链表上到期的任务
+    virtual void Tick() override//SIGALRM信号每次触发就会子啊信号处理函数中执行一次tick函数，处理链表上到期的任务
     {
         if(!head)//链表为空
         {
