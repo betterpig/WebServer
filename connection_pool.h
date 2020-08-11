@@ -1,7 +1,6 @@
 #ifndef CONNECTION_POOL_H
 #define CONNECTION_POOL_H
 
-
 #include <string>
 #include <mysql/mysql.h>
 #include <queue>
@@ -26,13 +25,11 @@ class connection_pool
     string password;
     string databasename;
     queue<MYSQL*> conn_queue;
-    sem_t reserve;
-    Locker locker;
+    sem_t sem;
+    //Locker locker;
+    pthread_mutex_t mtx;
     connection_pool(){}
-    ~connection_pool()
-    {
-        DestroyPool();
-    }
+    ~connection_pool();
 };
 
 class connectionRAII

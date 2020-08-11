@@ -79,7 +79,8 @@ private:
     struct stat m_file_stat;//目标文件的状态：是否存在、是否为目录、是否可读，文件大小等信息
     struct iovec m_iv[2];//io向量结构体数组，该结构体指出内存位置和内存长度,实现分散读和集中写（因为HTTP应答的前部分信息内容和后部分的文档内容通常是在不同的内存区域存储的）
     int m_iv_count;//被写内存块的数量
-
+    static map<string,string> users;
+    static Locker locker;
     
 public:
     HttpConn(){}
@@ -90,7 +91,7 @@ public:
     void Process();//处理客户请求
     bool Read();//非阻塞读操作
     bool Write();//非阻塞写操作
-    void GetDataBase(connection_pool* connpool);
+    static void GetDataBase(connection_pool* connpool);
 
 private:
     void Init();//初始化连接

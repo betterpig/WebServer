@@ -13,9 +13,6 @@ const char* error_500_title="Internal Error";
 const char* error_500_form="There was an unusual problem serving the requested file.\n";
 const char* doc_root="/home/sing/code/WebServer/root";
 
-map<string,string> users;
-Locker locker;
-
 int SetNonBlocking(int fd)//将文件描述符设为非阻塞状态
 {
     int old_option = fcntl(fd,F_GETFL);//获取文件描述符旧的状态标志
@@ -51,6 +48,8 @@ void Modfd(int epollfd,int fd,int ev)//在内核事件表中修改该文件的�
 
 int HttpConn::m_user_count=0;//类的静态数据成员只能在类外以类作用域的方式定义并初始化
 int HttpConn::m_epollfd=-1;
+map<string,string> HttpConn::users;
+Locker HttpConn:: locker;
 
 void HttpConn::CloseConn(bool real_close)
 {
@@ -128,7 +127,10 @@ HttpConn::LINE_STATUS HttpConn::ParseLine()//截取出一行给解析函数分�
 bool HttpConn::Read()
 {
     if(m_read_idx>=READ_BUFFER_SIZE)
+    {
+        LOG_ERROR("read buffer is full,client connection %d",m_sockfd);
         return false;
+    }
     
     int bytes_read=0;
     while(true)//因为是oneshot事件，所以要一直读完数据
@@ -138,10 +140,12 @@ bool HttpConn::Read()
         {
             if(errno==EAGAIN || errno==EWOULDBLOCK)//这两个错误码表明数据读取结束
                 break;
+            LOG_ERROR("unexpecte recv error,client connection %d",m_sockfd);
             return false;
         }
         else if(bytes_read==0)//当读数据函数返回0时，表明对方关闭了连接
         {
+            LOG_INFO("connection was closed,client connection %d",m_sockfd);
             return false;
         }
         m_read_idx+=bytes_read;//read_idx总是指向已保存数据的下一个字节位置
@@ -417,10 +421,10 @@ bool HttpConn::AddResponse(const char* format,...)//往写缓冲区写入待发�
     va_list arg_list;//处理可变参数的一组宏：va_list va_start va_end
     va_start(arg_list,format);
     int len=vsnprintf(m_write_buf+m_write_idx,WRITE_BUFFER_SIZE-1-m_write_idx,format,arg_list);
+    va_end(arg_list);
     if(len>=(WRITE_BUFFER_SIZE-1-m_write_idx))
         return false;
     m_write_idx+=len;//更新写指针的位置
-    va_end(arg_list);
     return true;
 }
 
@@ -528,7 +532,7 @@ bool HttpConn::Write()//通过writev把要发送的东西发送出去
         {
             if(errno==EAGAIN)//下次这来，发送缓冲区已满
             {
-                if(bytes_have_send>=m_iv[0].iov_len)
+                if(bytes_have_send>=m_iv[0].iov_len)//调整iovec数组中内存块的起始地址和长度，避免重复发送已经发送过的数据
                 {
                     m_iv[0].iov_len=0;
                     m_iv[1].iov_len=m_iv[1].iov_len-(bytes_have_send-m_iv[0].iov_len);
@@ -543,6 +547,7 @@ bool HttpConn::Write()//通过writev把要发送的东西发送出去
                 return true;
             }
             Unmap();//释放映射内存
+            LOG_ERROR("unexpected writev error,client connection %d",m_sockfd);
             return false;
         }
 

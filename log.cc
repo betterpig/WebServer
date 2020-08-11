@@ -118,6 +118,7 @@ void Log::WriteLog(int level,const char* format,...)
                     my_tm.tm_year+1900,my_tm.tm_mon+1,my_tm.tm_mday,
                     my_tm.tm_hour,my_tm.tm_min,my_tm.tm_sec,now.tv_usec,s);
     int m=vsnprintf(m_buf+n,m_log_buf_size-1,format,valst);
+    va_end(valst);
     m_buf[n+m]='\n';
     m_buf[n+m+1]='\n';
     log_str=m_buf;//用char*指针给string类型对象赋值，则会将char*所指向的字符串复制给string
@@ -134,7 +135,6 @@ void Log::WriteLog(int level,const char* format,...)
         fputs(log_str.c_str(),m_fp);
         locker.Unlock();
     }
-    va_end(valst);
 }
 
 void Log::Flush(void)

@@ -3,10 +3,10 @@
 
 #include <list>
 #include <cstdio>
-#include <exception>
 #include <pthread.h>
 #include "locker.h"
 #include "connection_pool.h"
+#include "log.h"
 
 template<typename T>//模板参数T是任务类
 class ThreadPool
@@ -45,13 +45,13 @@ ThreadPool<T>::ThreadPool(connection_pool* connpool,int thread_number,int max_re
         //所以得增加worker函数作为入口，并将this指针作为参数传入，再在worker中通过this指针调用run函数
         if(pthread_create(m_threads+i,nullptr,Worker,this)!=0)//创建线程，把线程id存放在m_threads数组中的第i个位置，该线程运行的函数是WOrker，参数是this
         {
+            LOG_ERROR("create the %dth thread failed",i);
             delete []m_threads;//创建线程失败，则删除整个线程数组并抛出异常
-            throw std::exception();
         }
         if(pthread_detach(m_threads[i]))//将线程设置为脱离线程：在退出时将自行释放其占有的系统资源
         {
+            LOG_ERROR("detach the %dth thread failed",i);
             delete []m_threads;//设置失败则删除整个线程组并抛出异常
-            throw std::exception();
         }
     }
 }

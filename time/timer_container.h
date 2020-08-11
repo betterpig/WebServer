@@ -5,9 +5,10 @@
 #include "time_list.h"
 #include "time_heap.h"
 #include "time_wheel.h"
+#include "../log.h"
 
 enum timer_type {SORTLIST=0,HEAP,WHEEL};//定时器容器类型
-
+static string type_to_string[]={"SORTLIST","HEAP","WHEEL"};
 class TimerContainer//定时器容器接口类
 {
 public:
@@ -27,6 +28,11 @@ public:
             break;
         default:
             break;
+        }
+        if(timer_ptr==nullptr)
+        {
+            LOG_ERROR("create timer_container of %s failed",type_to_string[type]);
+            exit(EXIT_FAILURE);
         }
     }
     ~TimerContainer()

@@ -48,7 +48,7 @@ void SigHandler(int sig)
 
 void ShowError(int connfd,const char* info)
 {
-    printf("%s",info);
+    LOG_INFO("server is busy,connection %d will be closed",connfd);
     send(connfd,info,strlen(info),0);
     close(connfd);
 }
@@ -74,14 +74,8 @@ int main(int argc,char *argv[])
     connpool->init("localhost",0,"root","123","db",5);
 
     ThreadPool<HttpConn>* pool=nullptr;
-    try
-    {
-        pool=new ThreadPool<HttpConn> (connpool);//建立线程池
-    }
-    catch(...)
-    {
-        return 1;
-    }
+    pool=new ThreadPool<HttpConn> (connpool);//建立线程池
+
     static TimerContainer timer_container(WHEEL);//定时器容器
     HttpConn* users=new HttpConn[10000];//建立HTTP客户对象数组
     assert(users);
@@ -131,7 +125,7 @@ int main(int argc,char *argv[])
         int number=epoll_wait(epollfd,events,MAX_EVENT_NUMBER,-1);
         if((number<0) && (errno!=EINTR))
         {
-            printf("epoll failure\n");
+            LOG_ERROR("%s","epoll failed");
             break;
         }
         for(int i=0;i<number;i++)//就绪事件：监听描述符可读、信号事件、连接描述符可读、连接描述符可写
@@ -144,7 +138,7 @@ int main(int argc,char *argv[])
                 int connection_fd=accept(listenfd,(struct sockaddr*) &client_address,&client_addr_length);
                 if(connection_fd<0)
                 {
-                    printf("errno is : %d\n",errno);
+                    LOG_ERROR("connection accept failed ,errno is : %d\n",errno);
                     continue;
                 }
                 if(HttpConn::m_user_count>=MAX_FD)
@@ -178,6 +172,7 @@ int main(int argc,char *argv[])
                         {
                             case SIGTERM:
                             case SIGINT:
+                                LOG_INFO("%s","recieve terminate signal,server is goint to stop soon");
                                 stop_server=true;
                                 break;
                             case SIGALRM:
