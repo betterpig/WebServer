@@ -25,6 +25,8 @@
 #include <mysql/mysql.h>
 #include <map>
 #include <string>
+#include "session.h"
+#include <unordered_map>
 using namespace std;
 
 class connection_pool;
@@ -72,6 +74,8 @@ private:
     char* m_url;//客户请求的目标文件的文件名
     char* m_version;//HTTP协议版本号
     char* m_host;//主机名
+    string m_cookie;
+    Session* m_curr_session;
     int m_content_length;//HTTP请求的消息体的长度
     std::string m_string;
     bool m_linger;//HTTP请求是否要求保持连接
@@ -79,8 +83,10 @@ private:
     struct stat m_file_stat;//目标文件的状态：是否存在、是否为目录、是否可读，文件大小等信息
     struct iovec m_iv[2];//io向量结构体数组，该结构体指出内存位置和内存长度,实现分散读和集中写（因为HTTP应答的前部分信息内容和后部分的文档内容通常是在不同的内存区域存储的）
     int m_iv_count;//被写内存块的数量
+
     static map<string,string> users;
     static Locker locker;
+    static unordered_map<string,Session*> sessions;
     
 public:
     HttpConn(){}

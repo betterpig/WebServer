@@ -80,7 +80,7 @@ public:
 
         int ticks=delay/SI;
         timer->rotation+=ticks/N;
-        timer->time_slot+=ticks%N;
+        timer->time_slot=(timer->time_slot+ticks)%N;
         ts=timer->time_slot;
         if(!slots[ts])//如果要插入的槽为空，那把该定时器作为头节点
             slots[ts]=timer;

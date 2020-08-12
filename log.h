@@ -35,6 +35,7 @@ private:
         {
             locker.Lock();//给日志文件上锁，确保同一时间只有一个线程在写文件，不然可能不同线程的内容凑在一起了
             fputs(single_log.c_str(),m_fp);
+            fflush(m_fp);
             locker.Unlock();
         }
     }

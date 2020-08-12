@@ -50,6 +50,7 @@ int HttpConn::m_user_count=0;//类的静态数据成员只能在类外以类作�
 int HttpConn::m_epollfd=-1;
 map<string,string> HttpConn::users;
 Locker HttpConn:: locker;
+unordered_map<string,Session*> HttpConn::sessions;
 
 void HttpConn::CloseConn(bool real_close)
 {
@@ -225,7 +226,16 @@ HttpConn::HTTP_CODE HttpConn::ParseHeaders(char* text)//解析首部行
         text+=strspn(text, " \t");//找到空格和制表符并跳到其后的第一个位置
         m_host=text;
     }
-    else    {}
+    else if(strncasecmp(text, "Cookie:",7)==0)
+    {
+        text+=7;
+        text+=strspn(text," \t");
+        text=strpbrk(text,"=")+1;
+        char* end=strpbrk(text,",");
+        *end='\0';
+        m_cookie=text;
+    }
+    else {}
         //printf("oop! unknow header %s\n",text);//这里只解析了host和空行，实际还有其他首部行：connection等等
     return NO_REQUEST;
 }
@@ -312,7 +322,21 @@ HttpConn::HTTP_CODE HttpConn::DoRequest()//分析客户请求的目标文件，�
 
     const char* p=strrchr(m_url,'/');
     LOG_INFO("request option is %d",*(p+1)-'\0');
-    if(cgi==1 && ( *(p+1)=='2' || *(p+1)=='3'))
+    
+    if(sessions.find(m_cookie)!=sessions.end() && sessions[m_cookie]->expire<=time(nullptr))
+    {
+        sessions.erase(m_cookie);
+    }
+    if(sessions.find(m_cookie)==sessions.end())
+    {
+        m_curr_session=new Session;
+        sessions[m_curr_session->session_id]=m_curr_session;
+    }
+    if(m_curr_session->is_authorized==true)
+    {
+        strcpy(m_url,"/picture.html");
+    }
+    else if( *(p+1)=='2' || *(p+1)=='3')
     {
         char name[100],passward[100];
         memset(name,'\0',100);
@@ -355,7 +379,10 @@ HttpConn::HTTP_CODE HttpConn::DoRequest()//分析客户请求的目标文件，�
         else if(*(p+1)=='2')
         {
             if(users.find(name) != users.end() && users[name]==passward)
+            {
                 strcpy(m_url,"/picture.html");
+                m_curr_session->is_authorized=true;
+            }
             else
                 strcpy(m_url,"/logError.html");
         }
@@ -438,6 +465,11 @@ bool HttpConn::AddHeaders(int content_len)//首部行
     AddResponse("Content-Length: %d\r\n",content_len);//相应内容长度
     AddResponse("Connection: %s\r\n",(m_linger==true)?"keep-alive":"close");//连接状态
     AddResponse("Content-Type: %s; charset=%s\r\n","text/html","UTF-8");
+    if(m_curr_session->is_reset)
+    {
+        AddResponse("Set-Cookie: key=%s,expire=%s",m_curr_session->session_id.c_str(),ctime(&(m_curr_session->expire)));
+        m_curr_session->is_reset=false;
+    }
     AddResponse("%s","\r\n");//空行
 }
 

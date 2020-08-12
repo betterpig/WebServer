@@ -13,7 +13,10 @@ Log::Log()
 Log::~Log()
 {
     if(!m_fp)
+    {
+        Flush();
         fclose(m_fp);
+    }
     delete m_buf;
 }
 
@@ -119,7 +122,7 @@ void Log::WriteLog(int level,const char* format,...)
                     my_tm.tm_hour,my_tm.tm_min,my_tm.tm_sec,now.tv_usec,s);
     int m=vsnprintf(m_buf+n,m_log_buf_size-1,format,valst);
     va_end(valst);
-    m_buf[n+m]='\n';
+    m_buf[n+m]='\r';
     m_buf[n+m+1]='\n';
     log_str=m_buf;//用char*指针给string类型对象赋值，则会将char*所指向的字符串复制给string
     locker.Unlock();
