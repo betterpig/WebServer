@@ -231,8 +231,6 @@ HttpConn::HTTP_CODE HttpConn::ParseHeaders(char* text)//解析首部行
         text+=7;
         text+=strspn(text," \t");
         text=strpbrk(text,"=")+1;
-        char* end=strpbrk(text,",");
-        *end='\0';
         m_cookie=text;
     }
     else {}
@@ -299,21 +297,45 @@ HttpConn::HTTP_CODE HttpConn::ProcessRead()//主状态机，用于从buffer中�
 void HttpConn::GetDataBase(connection_pool* connpool)
 {
     MYSQL* mysql=nullptr;
-    connectionRAII mysqlcon(&mysql,connpool);
-    if(mysql_query(mysql,"SELECT user_name,passwd FROM user_data"))
-        LOG_ERROR("mysql errorno is %d",mysql_error(mysql));
+    connectionRAII mysqlcon(&mysql,connpool);//获取sql连接
+    if(mysql_query(mysql,"CREATE TABLE IF NOT EXISTS user_data (user_name char(20),password char(20));"))//执行mysql查询语句
+        LOG_ERROR("MySQL create table failed, %s",mysql_error(mysql));
+    if(mysql_query(mysql,"SELECT user_name,passwd FROM user_data"))//执行mysql查询语句
+        LOG_ERROR("MySQL query failed, %s",mysql_error(mysql));
 
-    MYSQL_RES* result=mysql_store_result(mysql);
-    int num_fieleds=mysql_num_fields(result);
-    MYSQL_FIELD *fields=mysql_fetch_fields(result);
-    while(MYSQL_ROW row=mysql_fetch_row(result))
+    MYSQL_RES* result=mysql_store_result(mysql);//读取命令结果
+    if(!result)
+        LOG_ERROR("%s","MySQL query result is null");
+    int num_fileds=mysql_num_fields(result);//读取字段数量
+    if(num_fileds==0)
+        LOG_ERROR("%s","MySQL fields number is 0");
+    MYSQL_FIELD *fields=mysql_fetch_fields(result);//读取字段
+    if(!fields)
+        LOG_ERROR("%s","MySQL fields pointer is null");
+    while(MYSQL_ROW row=mysql_fetch_row(result))//读取一行数据
     {
+        if(row[0]=="" || row[1]=="")
+            LOG_ERROR("%s","MySQL row result is null");
         string temp1(row[0]);
         string temp2(row[1]);
         users[temp1]=temp2;
     }
 }
 
+Session* HttpConn::check_session(string cookie)
+{
+    Session* session;
+    if(sessions.find(cookie)!=sessions.end() && sessions[cookie]->expire<=time(nullptr))
+        sessions.erase(cookie);
+    if(sessions.find(cookie)==sessions.end())
+    {
+        session=new Session;
+        sessions[session->session_id]=session;
+    }
+    else
+        session=sessions[cookie];
+    return session;
+}
 
 HttpConn::HTTP_CODE HttpConn::DoRequest()//分析客户请求的目标文件，存在，可读且不是目录，则将其映射到内存中，并返回成功
 {
@@ -323,15 +345,7 @@ HttpConn::HTTP_CODE HttpConn::DoRequest()//分析客户请求的目标文件，�
     const char* p=strrchr(m_url,'/');
     LOG_INFO("request option is %d",*(p+1)-'\0');
     
-    if(sessions.find(m_cookie)!=sessions.end() && sessions[m_cookie]->expire<=time(nullptr))
-    {
-        sessions.erase(m_cookie);
-    }
-    if(sessions.find(m_cookie)==sessions.end())
-    {
-        m_curr_session=new Session;
-        sessions[m_curr_session->session_id]=m_curr_session;
-    }
+    m_curr_session=check_session(m_cookie);
     if(m_curr_session->is_authorized==true)
     {
         strcpy(m_url,"/picture.html");
@@ -467,7 +481,7 @@ bool HttpConn::AddHeaders(int content_len)//首部行
     AddResponse("Content-Type: %s; charset=%s\r\n","text/html","UTF-8");
     if(m_curr_session->is_reset)
     {
-        AddResponse("Set-Cookie: key=%s,expire=%s",m_curr_session->session_id.c_str(),ctime(&(m_curr_session->expire)));
+        AddResponse("Set-Cookie: key=%s;expires=%s",m_curr_session->session_id.c_str(),ctime(&(m_curr_session->expire)));
         m_curr_session->is_reset=false;
     }
     AddResponse("%s","\r\n");//空行

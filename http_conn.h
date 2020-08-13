@@ -108,7 +108,7 @@ private:
     LINE_STATUS ParseLine();//每次截取一行内容，交给解析请求行或者解析首部行函数
     HTTP_CODE DoRequest();//分析客户请求的目标文件的状态
     char* GetLine() {return m_read_buf+m_start_line; }//数组首地址加行偏移
-    
+    Session* check_session(string cookie);
     bool ProcessWrite(HTTP_CODE ret);//写HTTP应答的入口函数
     bool AddResponse(const char* format,...);//加内容,最终都是调用该函数
     bool AddContent(const char* content);//加文档内容
