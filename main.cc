@@ -9,6 +9,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <sys/epoll.h>
+#include <netdb.h>
 
 #include "thread_pool.h"
 #include "http_conn.h"
@@ -61,13 +62,44 @@ int main(int argc,char *argv[])
     Log::GetInstance()->init("ServerLog", 2000, 800000, 0); //同步日志模型
 #endif
 
+    in_addr ip;
+    int port;
     if(argc<=2)
     {
-        printf("usage: %s ip_address port_number\n",basename(argv[0]));
-        return 1;
+        //printf("usage: %s ip_address port_number\n",basename(argv[0]));
+        //return 1;
+        LOG_INFO("%s","will use host ip and port:1234 as server socket address\n");
+        char name[256]={0};
+        if(gethostname(name,sizeof(name)))
+        {
+            perror("get host name failed");
+            exit(EXIT_FAILURE);
+        }
+        struct hostent* host_entry=gethostbyname(name);
+        if(host_entry)
+        {
+            ip=*((struct in_addr*)host_entry->h_addr_list[0]);
+            port=1234;
+        }
+        else
+        {
+            perror("get host entry failed");
+            exit(EXIT_FAILURE);
+        }
     }
-    const char *ip=argv[1];
-    int port=atoi(argv[2]);
+    else
+    {
+        inet_aton(argv[1],&ip);
+        port=atoi(argv[2]);
+    }
+
+    //创建IPv4 socket 地址
+    struct sockaddr_in server_address;//定义服务端套接字
+    bzero(&server_address,sizeof(server_address));//先将服务器套接字结构体置0
+    server_address.sin_family=AF_INET;//然后对服务端套接字进行赋值：IPV4协议、本机地址、端口
+    server_address.sin_addr=ip;
+    //inet_pton(AF_INET,ip,&server_address.sin_addr);//point to net
+    server_address.sin_port=htons(port);//host to net short
 
     connection_pool* connpool=connection_pool::GetInstance();
     //init参数：ip，端口（0表示默认），数据库用户名，数据库密码，数据库名，连接池中连接个数
@@ -81,24 +113,31 @@ int main(int argc,char *argv[])
     assert(users);
     users[0].GetDataBase(connpool);
     int user_count=0;
-    //创建IPv4 socket 地址
-    struct sockaddr_in server_address;//定义服务端套接字
-    bzero(&server_address,sizeof(server_address));//先将服务器套接字结构体置0
-    server_address.sin_family=AF_INET;//然后对服务端套接字进行赋值：IPV4协议、本机地址、端口
-    inet_pton(AF_INET,ip,&server_address.sin_addr);//point to net
-    server_address.sin_port=htons(port);//host to net short
+    
 
     //创建TCPsocket，并将其绑定到端口port上
     int listenfd=socket(AF_INET,SOCK_STREAM,0);//指定协议族：IPV4协议，套接字类型：字节流套接字，传输协议类型：TCP传输协议，返回套接字描述符;
-    assert(listenfd>=0);
+    if(listenfd==-1)
+    {
+        LOG_ERROR("create socket failed, errno is %d\n",errno);
+        exit(EXIT_FAILURE);
+    }
     struct linger tmp={1,0};
     setsockopt(listenfd,SOL_SOCKET,SO_LINGER,&tmp,sizeof(tmp));
 
     int ret=bind(listenfd,(struct sockaddr*) &server_address,sizeof(server_address));//将监听描述符与服务器套接字绑定
-    assert(ret!=1);
+    if(ret==-1)
+    {
+        LOG_ERROR("bind socket with address failed, errno is %d\n",errno);
+        exit(EXIT_FAILURE);
+    }
     
     ret=listen(listenfd,5);//将主动套接字转换为被动套接字，并指定established队列上限
-    assert(ret!=-1);
+    if(ret==-1)
+    {
+        LOG_ERROR("listen socketfd failed,errno is %d",errno);
+        exit(EXIT_FAILURE);
+    }
 
     epoll_event events[MAX_EVENT_NUMBER];
     int epollfd=epoll_create(10);

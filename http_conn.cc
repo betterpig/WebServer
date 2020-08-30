@@ -299,13 +299,23 @@ void HttpConn::GetDataBase(connection_pool* connpool)
     MYSQL* mysql=nullptr;
     connectionRAII mysqlcon(&mysql,connpool);//获取sql连接
     if(mysql_query(mysql,"CREATE TABLE IF NOT EXISTS user_data (user_name char(20),password char(20));"))//执行mysql查询语句
+    {
         LOG_ERROR("MySQL create table failed, %s",mysql_error(mysql));
-    if(mysql_query(mysql,"SELECT user_name,passwd FROM user_data"))//执行mysql查询语句
+        exit(EXIT_FAILURE);
+    }
+        
+    if(mysql_query(mysql,"SELECT user_name,password FROM user_data"))//执行mysql查询语句
+    {
         LOG_ERROR("MySQL query failed, %s",mysql_error(mysql));
+        exit(EXIT_FAILURE);
+    }
 
     MYSQL_RES* result=mysql_store_result(mysql);//读取命令结果
     if(!result)
+    {
         LOG_ERROR("%s","MySQL query result is null");
+        return;
+    }
     int num_fileds=mysql_num_fields(result);//读取字段数量
     if(num_fileds==0)
         LOG_ERROR("%s","MySQL fields number is 0");
@@ -343,12 +353,18 @@ HttpConn::HTTP_CODE HttpConn::DoRequest()//分析客户请求的目标文件，�
     int len=strlen(doc_root);
 
     const char* p=strrchr(m_url,'/');
-    LOG_INFO("request option is %d",*(p+1)-'\0');
+    //LOG_INFO("request option is %d",*(p+1)-'\0');
+    
+    if(*(p+1)=='4')
+    {
+        sessions.erase(m_cookie);
+        strcpy(m_url,"/initial.html");
+    }
     
     m_curr_session=check_session(m_cookie);
     if(m_curr_session->is_authorized==true)
     {
-        strcpy(m_url,"/picture.html");
+        strcpy(m_url,"/welcome.html");
     }
     else if( *(p+1)=='2' || *(p+1)=='3')
     {
@@ -364,12 +380,12 @@ HttpConn::HTTP_CODE HttpConn::DoRequest()//分析客户请求的目标文件，�
         for(i=i+10;m_string[i]!='\0';++i)
             passward[j++]=m_string[i];
         passward[j]='\0';
-        if(*(p+1)=='3')
+        if(*(p+1)=='3')//注册返回
         {
             if(users.find(name)==users.end())
             {
                 char* sql_insert=(char*) malloc( sizeof(char)*500 );
-                strcpy(sql_insert,"INSERT INTO user_data(user_name,passwd) VALUES(");
+                strcpy(sql_insert,"INSERT INTO user_data(user_name,password) VALUES(");
                 strcat(sql_insert,"'");
                 strcat(sql_insert,name);
                 strcat(sql_insert,"', '");
@@ -378,6 +394,8 @@ HttpConn::HTTP_CODE HttpConn::DoRequest()//分析客户请求的目标文件，�
                 
                 locker.Lock();
                 int res=mysql_query(mysql,sql_insert);
+                if(res)
+                    LOG_ERROR("MySQL query failed, %s",mysql_error(mysql));
                 users.insert(pair<string,string>(name,passward));
                 locker.Unlock();
                 free(sql_insert);
@@ -390,11 +408,11 @@ HttpConn::HTTP_CODE HttpConn::DoRequest()//分析客户请求的目标文件，�
             else
                 strcpy(m_url,"/registerError.html");
         }
-        else if(*(p+1)=='2')
+        else if(*(p+1)=='2')//登录返回
         {
             if(users.find(name) != users.end() && users[name]==passward)
             {
-                strcpy(m_url,"/picture.html");
+                strcpy(m_url,"/welcom.html");
                 m_curr_session->is_authorized=true;
             }
             else
@@ -402,21 +420,21 @@ HttpConn::HTTP_CODE HttpConn::DoRequest()//分析客户请求的目标文件，�
         }
     }
 
-    if(*(p+1)=='\0')
+    if(*(p+1)=='\0')//起始页面
     {
         char* m_url_new=(char*) malloc(sizeof(char)*100);
-        strcpy(m_url_new,"/welcome.html");
+        strcpy(m_url_new,"/initial.html");
         strncpy(m_real_file+len,m_url_new,strlen(m_url_new));
         free(m_url_new);
     }
-    else if(*(p+1)=='0')
+    else if(*(p+1)=='0')//显示注册页面
     {
         char* m_url_new=(char*) malloc(sizeof(char)*100);
         strcpy(m_url_new,"/register.html");
         strncpy(m_real_file+len,m_url_new,strlen(m_url_new));
         free(m_url_new);
     }
-    else if(*(p+1)=='1')
+    else if(*(p+1)=='1')//显示登录页面
     {
         char* m_url_new=(char*) malloc(sizeof(char)*100);
         strcpy(m_url_new,"/log.html");
