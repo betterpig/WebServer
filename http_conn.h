@@ -27,9 +27,12 @@
 #include <string>
 #include "session.h"
 #include <unordered_map>
+//#include "time/timer_base.h"
 using namespace std;
 
-class connection_pool;
+//#define REACTOR
+
+class ConnectionPool;
 
 class HttpConn
 {
@@ -41,25 +44,27 @@ public:
     enum CHECK_STATE {  CHECK_STATE_REQUESTLINE=0,//解析客户请求时，主状态机所处的状态
                         CHECK_STATE_HEADER,
                         CHECK_STATE_CONTENT};
-    enum HTTP_CODE {NO_REQUEST, //服务器处理HTTP请求的可能结果
-                    GET_REQUEST, 
-                    BAD_REQUEST, 
-                    NO_RESOURCE,
-                    FORBIDDEN_REQUEST, 
-                    FILE_REQUEST,
-                    INTERNAL_ERROR, 
-                    CLOSED_CONNECTION};
+    enum HTTP_CODE {NO_REQUEST, //服务器处理HTTP请求的可能结果：请求不完整
+                    GET_REQUEST, //收到请求
+                    BAD_REQUEST, //请求有错误
+                    NO_RESOURCE, //无资源
+                    FORBIDDEN_REQUEST, //没有访问权限
+                    FILE_REQUEST, //文件请求
+                    INTERNAL_ERROR, //内部错误
+                    CLOSED_CONNECTION}; //关闭连接
     enum LINE_STATUS {LINE_OK=0,LINE_BAD,LINE_OPEN};//行的读取状态
 
 public:
     static int m_epollfd;//类的静态数据成员，将被所有同类对象所共享。所有socket上的事件都注册到同一个epoll内核事件表上，
     static int m_user_count;//统计用户数量
     void* timer;
+    //TimerContainer* timer_container;
     MYSQL* mysql;
+    sockaddr_in m_address;
 
 private:
     int m_sockfd;
-    sockaddr_in m_address;
+    
     char m_read_buf[READ_BUFFER_SIZE];//读缓冲区
     int m_read_idx;//已经读入的客户数据的最后一个字节的下一个位置
     int m_checked_idx;//当前正在分析的字符在读缓冲区的位置
@@ -97,7 +102,7 @@ public:
     void Process();//处理客户请求
     bool Read();//非阻塞读操作
     bool Write();//非阻塞写操作
-    static void GetDataBase(connection_pool* connpool);
+    static void GetDataBase(ConnectionPool* connpool);
 
 private:
     void Init();//初始化连接

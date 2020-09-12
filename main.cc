@@ -27,6 +27,7 @@ extern int Addfd(int epollfd,int fd,bool oneshot);
 extern int Removdfd(int epollfd,int fd);
 extern int SetNonBlocking(int fd);
 bool timeout =false;//通过该标志位来判断是否收到SIGALRM信号
+bool is_reactor=false;
 
 void AddSig(int sig,void (*handler) (int),bool restart=true)//设置给定信号对应的信号处理函数
 {
@@ -56,6 +57,11 @@ void ShowError(int connfd,const char* info)
 
 int main(int argc,char *argv[])
 {
+    /*if(daemon(1,0) == -1)
+    {
+        perror("daemon error");
+        exit(EXIT_FAILURE);
+    }*/
 #ifdef ASYNLOG
     Log::GetInstance()->init("ServerLog", 2000, 800000, 8); //异步日志模型
 #else
@@ -63,12 +69,12 @@ int main(int argc,char *argv[])
 #endif
 
     in_addr ip;
+    char point_ip[50];
     int port;
     if(argc<=2)
     {
         //printf("usage: %s ip_address port_number\n",basename(argv[0]));
         //return 1;
-        LOG_INFO("%s","will use host ip and port:1234 as server socket address\n");
         char name[256]={0};
         if(gethostname(name,sizeof(name)))
         {
@@ -86,12 +92,17 @@ int main(int argc,char *argv[])
             perror("get host entry failed");
             exit(EXIT_FAILURE);
         }
+        inet_ntop(AF_INET,host_entry->h_addr_list[0],point_ip,INET_ADDRSTRLEN);
+        if(strncmp(point_ip,"127",3)==0)
+            inet_pton(AF_INET,"172.21.0.5",&ip);
     }
     else
     {
         inet_aton(argv[1],&ip);
         port=atoi(argv[2]);
     }
+    inet_ntop(AF_INET,&ip,point_ip,INET_ADDRSTRLEN);
+    LOG_INFO("will use host ip %s and port:1234 as server socket address",point_ip);
 
     //创建IPv4 socket 地址
     struct sockaddr_in server_address;//定义服务端套接字
@@ -101,25 +112,24 @@ int main(int argc,char *argv[])
     //inet_pton(AF_INET,ip,&server_address.sin_addr);//point to net
     server_address.sin_port=htons(port);//host to net short
 
-    connection_pool* connpool=connection_pool::GetInstance();
+    ConnectionPool* connpool=ConnectionPool::GetInstance();
     //init参数：ip，端口（0表示默认），数据库用户名，数据库密码，数据库名，连接池中连接个数
     connpool->init("localhost",0,"root","123","db",5);
 
     ThreadPool<HttpConn>* pool=nullptr;
     pool=new ThreadPool<HttpConn> (connpool);//建立线程池
 
-    static TimerContainer timer_container(WHEEL);//定时器容器
-    HttpConn* users=new HttpConn[10000];//建立HTTP客户对象数组
+    TimerContainer timer_container(HEAP);//定时器容器
+    HttpConn* users=new HttpConn[MAX_FD];//建立HTTP客户对象数组
     assert(users);
     users[0].GetDataBase(connpool);
     int user_count=0;
-    
 
     //创建TCPsocket，并将其绑定到端口port上
     int listenfd=socket(AF_INET,SOCK_STREAM,0);//指定协议族：IPV4协议，套接字类型：字节流套接字，传输协议类型：TCP传输协议，返回套接字描述符;
     if(listenfd==-1)
     {
-        LOG_ERROR("create socket failed, errno is %d\n",errno);
+        perror("create socket: ");
         exit(EXIT_FAILURE);
     }
     struct linger tmp={1,0};
@@ -128,14 +138,14 @@ int main(int argc,char *argv[])
     int ret=bind(listenfd,(struct sockaddr*) &server_address,sizeof(server_address));//将监听描述符与服务器套接字绑定
     if(ret==-1)
     {
-        LOG_ERROR("bind socket with address failed, errno is %d\n",errno);
+        perror("bind socket");
         exit(EXIT_FAILURE);
     }
     
     ret=listen(listenfd,5);//将主动套接字转换为被动套接字，并指定established队列上限
     if(ret==-1)
     {
-        LOG_ERROR("listen socketfd failed,errno is %d",errno);
+        perror("listen socketfd");
         exit(EXIT_FAILURE);
     }
 
@@ -159,13 +169,14 @@ int main(int argc,char *argv[])
 
     alarm(TIMESLOT);//设置闹钟
     bool stop_server=false;
+
     while(!stop_server)
     {
-        int number=epoll_wait(epollfd,events,MAX_EVENT_NUMBER,-1);
+        int number=epoll_wait(epollfd,events,MAX_EVENT_NUMBER,-1);        
         if((number<0) && (errno!=EINTR))
         {
-            LOG_ERROR("%s","epoll failed");
-            break;
+            perror("epoll failed");
+            exit(EXIT_FAILURE);
         }
         for(int i=0;i<number;i++)//就绪事件：监听描述符可读、信号事件、连接描述符可读、连接描述符可写
         {
@@ -177,20 +188,22 @@ int main(int argc,char *argv[])
                 int connection_fd=accept(listenfd,(struct sockaddr*) &client_address,&client_addr_length);
                 if(connection_fd<0)
                 {
-                    LOG_ERROR("connection accept failed ,errno is : %d\n",errno);
+                    LOG_ERROR("connection accept failed ,errno is : %d",errno);
                     continue;
                 }
                 if(HttpConn::m_user_count>=MAX_FD)
                 {
                     ShowError(connection_fd,"Internet server busy");
+                    LOG_INFO("%s","connection number arrived max capacity");
                     continue;
                 }
                 users[connection_fd].Init(connection_fd,client_address);
                 users[connection_fd].timer=timer_container.AddTimer(&users[connection_fd],3*TIMESLOT);//将该定时器节点加到链表中
-                
+                LOG_INFO("accept connection from port %d",ntohs(client_address.sin_port));
             }
             else if(events[i].events & (EPOLLRDHUP | EPOLLERR))
             {//连接被对方关闭、管道的写端关闭、错误
+                LOG_INFO("EPOLLRDHUP || EPOLLERR,connection %d was closed by client",ntohs(users[sockfd].m_address.sin_port));
                 timer_container.DeleteTimer(users[sockfd].timer);
                 users[sockfd].CloseConn();
             }
@@ -215,7 +228,7 @@ int main(int argc,char *argv[])
                                 stop_server=true;
                                 break;
                             case SIGALRM:
-                                timeout=true;
+                                //timeout=true;
                                 break;
                             default:
                                 break;
@@ -225,26 +238,45 @@ int main(int argc,char *argv[])
             }
             else if(events[i].events & EPOLLIN)
             {
-                if(users[sockfd].Read())//成功读取到HTTP请求
+                #ifdef REACTOR
                 {
-                    pool->Append(users+sockfd);//将该请求加入到工作队列中
+                    pool->Append(users+sockfd);
                     timer_container.AdjustTimer(users[sockfd].timer,3*TIMESLOT);
                 }
-                else
+                #else
                 {
-                    timer_container.DeleteTimer(users[sockfd].timer);
-                    users[sockfd].CloseConn();//读失败，关闭连接
+                    if(users[sockfd].Read())//成功读取到HTTP请求
+                    {
+                        pool->Append(users+sockfd);//将该请求加入到工作队列中
+                        timer_container.AdjustTimer(users[sockfd].timer,3*TIMESLOT);
+                    }
+                    else
+                    {
+                        timer_container.DeleteTimer(users[sockfd].timer);
+                        users[sockfd].CloseConn();//读失败，关闭连接
+                    }
                 }
+                #endif
             }
             else if(events[i].events & EPOLLOUT)
             {
-                if(!users[sockfd].Write())//写失败
+                #ifdef REACTOR
                 {
-                    timer_container.DeleteTimer(users[sockfd].timer);
-                    users[sockfd].CloseConn();//关闭连接
-                }
-                else
+                    pool->Append(users+sockfd);
                     timer_container.AdjustTimer(users[sockfd].timer,3*TIMESLOT);
+                }
+                #else
+                {
+                    if(!users[sockfd].Write())//写失败或者是短连接
+                    {
+                        timer_container.DeleteTimer(users[sockfd].timer);
+                        users[sockfd].CloseConn();//关闭连接
+                    }
+                    else
+                        timer_container.AdjustTimer(users[sockfd].timer,3*TIMESLOT);
+                }
+                #endif
+                
             }
             else 
                 continue;

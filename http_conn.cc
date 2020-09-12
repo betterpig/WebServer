@@ -1,6 +1,7 @@
 #include "http_conn.h"
 #include "connection_pool.h"
 #include "log.h"
+#include <netinet/in.h>
 
 const char* ok_200_title="OK";
 const char* error_400_title="Bad Request";
@@ -54,6 +55,7 @@ unordered_map<string,Session*> HttpConn::sessions;
 
 void HttpConn::CloseConn(bool real_close)
 {
+    LOG_INFO("close connection %d",ntohs(m_address.sin_port));
     if(real_close && (m_sockfd!=-1))//检查连接描述符是否有效
     {
         Removefd(m_epollfd,m_sockfd);
@@ -77,7 +79,7 @@ void HttpConn::Init(int sockfd,const sockaddr_in& addr)
 void HttpConn::Init()
 {
     m_check_state=CHECK_STATE_REQUESTLINE;
-    m_linger=false;
+    m_linger=true;
     m_method=GET;//方法默认为GET
     m_url=0;
     m_version=0;
@@ -146,7 +148,7 @@ bool HttpConn::Read()
         }
         else if(bytes_read==0)//当读数据函数返回0时，表明对方关闭了连接
         {
-            LOG_INFO("connection was closed,client connection %d",m_sockfd);
+            LOG_INFO("connection was closed by client connection %d",m_sockfd);
             return false;
         }
         m_read_idx+=bytes_read;//read_idx总是指向已保存数据的下一个字节位置
@@ -166,12 +168,9 @@ HttpConn::HTTP_CODE HttpConn::ParseRequestLine(char* text)//解析请求行
     if(strcasecmp(method,"GET") ==0 )//检查temp中是否包含“GET”
         m_method=GET;
     else if(strcasecmp(method,"POST") ==0 )
-    {
         m_method=POST;
-        cgi=1;
-    }
     else
-        return BAD_REQUEST;//只支持GET
+        return BAD_REQUEST;//只支持GET和post
     //url
     m_url += strspn(m_url, " \t");//在url字符串中查找空格和制表符，返回其不匹配的第一个位置，也就是说，url现在指向第一个h
     //version
@@ -180,7 +179,9 @@ HttpConn::HTTP_CODE HttpConn::ParseRequestLine(char* text)//解析请求行
         return BAD_REQUEST;
     *m_version++='\0';//将空格或制表符置为空，再把version指针移到下一位，现在version就指向H
     m_version+=strspn(m_version, " \t");//避免有很多空格的情况，先把空格都跳过，就指向了H
-    if(strcasecmp(m_version, "HTTP/1.1") != 0)//在version起始的字符串中查找该字符串
+    if(strcasecmp(m_version,"HTTP/1.0")==0)
+        m_linger=false;
+    else if(strcasecmp(m_version, "HTTP/1.1") != 0)//在version起始的字符串中查找该字符串
         return BAD_REQUEST;
     
     //url
@@ -211,8 +212,8 @@ HttpConn::HTTP_CODE HttpConn::ParseHeaders(char* text)//解析首部行
     {
         text+=11;
         text+=strspn(text," \t");//跳过空格和制表符
-        if(strcasecmp(text,"keep-alive")==0)//如果是keep-alive，linger置为true
-            m_linger=true;
+        if(strcasecmp(text,"keep-alive")!=0)//如果不是keep-alive，linger置为false
+            m_linger=false;
     }
     else if(strncasecmp(text,"Content-Length:",15)==0)//请求内容的长度
     {
@@ -294,7 +295,7 @@ HttpConn::HTTP_CODE HttpConn::ProcessRead()//主状态机，用于从buffer中�
     return NO_REQUEST;
 }
 
-void HttpConn::GetDataBase(connection_pool* connpool)
+void HttpConn::GetDataBase(ConnectionPool* connpool)
 {
     MYSQL* mysql=nullptr;
     connectionRAII mysqlcon(&mysql,connpool);//获取sql连接
@@ -353,7 +354,7 @@ HttpConn::HTTP_CODE HttpConn::DoRequest()//分析客户请求的目标文件，�
     int len=strlen(doc_root);
 
     const char* p=strrchr(m_url,'/');
-    //LOG_INFO("request option is %d",*(p+1)-'\0');
+    //LOG_INFO("request option is [%s]",p+1);
     
     if(*(p+1)=='4')
     {
@@ -497,7 +498,7 @@ bool HttpConn::AddHeaders(int content_len)//首部行
     AddResponse("Content-Length: %d\r\n",content_len);//相应内容长度
     AddResponse("Connection: %s\r\n",(m_linger==true)?"keep-alive":"close");//连接状态
     AddResponse("Content-Type: %s; charset=%s\r\n","text/html","UTF-8");
-    if(m_curr_session->is_reset)
+    if(m_curr_session && m_curr_session->is_reset)
     {
         AddResponse("Set-Cookie: key=%s;expires=%s",m_curr_session->session_id.c_str(),ctime(&(m_curr_session->expire)));
         m_curr_session->is_reset=false;
@@ -590,17 +591,19 @@ bool HttpConn::Write()//通过writev把要发送的东西发送出去
         return true;
     }
     while(1)
-    {
+    {//writev有个bug，就是在写之前关闭了连接，writev并不会返回写错误，如果是长连接的话，此函数内不会因为写失败而返回false
+    //而在主线程中，将SIGPIPE信号设置成了忽略，epoll也不会捕获到该信号，也无法获知对方关闭，导致该连接的服务器端一直处于close_wait状态
         temp=writev(m_sockfd,m_iv,m_iv_count);//将io向量中的各块内存集中往连接描述符上写
+        
         if(temp<=-1)
         {
             if(errno==EAGAIN)//下次这来，发送缓冲区已满
             {
                 if(bytes_have_send>=m_iv[0].iov_len)//调整iovec数组中内存块的起始地址和长度，避免重复发送已经发送过的数据
                 {
-                    m_iv[0].iov_len=0;
                     m_iv[1].iov_len=m_iv[1].iov_len-(bytes_have_send-m_iv[0].iov_len);
                     m_iv[1].iov_base=m_file_address+(bytes_have_send-m_iv[0].iov_len);
+                    m_iv[0].iov_len=0;
                 }
                 else
                 {
@@ -617,7 +620,7 @@ bool HttpConn::Write()//通过writev把要发送的东西发送出去
 
         bytes_to_send-=temp;//更新未发送的字节数已发送字节数
         bytes_have_send+=temp;
-        if(bytes_to_send<=0)//如果已发送字节数大于未发送的，说明已经发完了
+        if(bytes_to_send==0)//如果已发送字节数大于未发送的，说明已经发完了
         {
             Unmap();
             if(m_linger)//根据linger决定是否要关闭连接
@@ -637,6 +640,16 @@ bool HttpConn::Write()//通过writev把要发送的东西发送出去
 
 void HttpConn::Process()
 {
+    #ifdef REACTOR
+    {
+        if(!Read())//成功读取到HTTP请求
+        {
+            CloseConn();//读失败，关闭连接}
+            return;
+        }
+    }
+    #endif
+
     HTTP_CODE read_ret=ProcessRead();//读取HTTP报文
     if(read_ret==NO_REQUEST)
     {
@@ -646,5 +659,15 @@ void HttpConn::Process()
     bool write_ret=ProcessWrite(read_ret);//根据状态码发送不同的HTTP响应报文
     if(!write_ret)//写失败，关闭连接
         CloseConn();
+    #ifdef REACTOR
+    {
+        if(!Write())//写失败或者是短连接
+            {
+                
+                CloseConn();//关闭连接
+            }
+    }
+    #endif
+
     Modfd(m_epollfd,m_sockfd,EPOLLOUT);//写成功则注册该连接描述符上的可写事件，当发送缓冲有空位时，就可写，就能调用write函数，把要发送的数据写到发送缓冲中，等待发送出去了
 }

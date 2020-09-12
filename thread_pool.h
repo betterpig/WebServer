@@ -15,22 +15,22 @@ private:
     int m_thread_number;//线程池中的线程数量
     int m_max_requests;//请求队列中的最大请求数
     pthread_t* m_threads;//线程池id数组
-    std::queue<T*> m_work_queue;//请求队列，用链表表示队列
+    std::queue<T*> m_work_queue;//请求队列
     Locker m_queue_locker;//保护请求队列的互斥锁
     Sem m_queue_stat;//表明是否有任务需要处理的信号量
     bool m_stop;//线程结束的标志
-    connection_pool* m_connpool;
+    ConnectionPool* m_connpool;
     static void* Worker(void* arg);
     void Run();
 
 public:
-    ThreadPool(connection_pool* connpool,int thread_number=8,int max_requests=10000);
+    ThreadPool(ConnectionPool* connpool,int thread_number=8,int max_requests=10000);
     ~ThreadPool();
     bool Append(T* request);
 };
 
 template<typename T>
-ThreadPool<T>::ThreadPool(connection_pool* connpool,int thread_number,int max_requests)
+ThreadPool<T>::ThreadPool(ConnectionPool* connpool,int thread_number,int max_requests)
 :m_thread_number(thread_number),m_max_requests(max_requests),m_stop(false),m_threads(nullptr),m_connpool(connpool)
 {
     if((thread_number<=0) || (max_requests<=0))
@@ -45,13 +45,13 @@ ThreadPool<T>::ThreadPool(connection_pool* connpool,int thread_number,int max_re
         //所以得增加worker函数作为入口，并将this指针作为参数传入，再在worker中通过this指针调用run函数
         if(pthread_create(m_threads+i,nullptr,Worker,this)!=0)//创建线程，把线程id存放在m_threads数组中的第i个位置，该线程运行的函数是WOrker，参数是this
         {
-            LOG_ERROR("create the %dth thread failed",i);
             delete []m_threads;//创建线程失败，则删除整个线程数组并抛出异常
+            perror("create thread failed");
         }
         if(pthread_detach(m_threads[i]))//将线程设置为脱离线程：在退出时将自行释放其占有的系统资源
         {
-            LOG_ERROR("detach the %dth thread failed",i);
             delete []m_threads;//设置失败则删除整个线程组并抛出异常
+            perror("detach thread failed");
         }
     }
 }
@@ -74,8 +74,8 @@ bool ThreadPool<T>::Append(T* request)
         return false;
     }
     m_work_queue.push(request);//将请求放到队列最后
-    m_queue_stat.Post();//将信号量+1
     m_queue_locker.Unlock();//解锁
+    m_queue_stat.Post();//将信号量+1，
     return true;
 }
 
@@ -92,21 +92,19 @@ void ThreadPool<T>::Run()
 {
     while(!m_stop)
     {
-        m_queue_stat.Wait();//阻塞，等待有请求来到.若信号量大于1，则执行-1操作
-        m_queue_locker.Lock();//请求来到，给请求队列上锁
-        if(m_work_queue.empty())//如果请求队列空了，说明请求被别的线程取走了
-        {
-            m_queue_locker.Unlock();//解锁
-            continue;//重头开始等
-        }
+        m_queue_stat.Wait();//阻塞，等待有请求来到.若某线程被唤醒，则执行-1操作并返回
+        m_queue_locker.Lock();//请求来到，给请求队列上锁，避免同时有两个线程取请求，或者主线程在加请求工作线程在取请求
+
         T* request=m_work_queue.front();//取出队列头
         m_work_queue.pop();//将队列头popk
+
         m_queue_locker.Unlock();//解锁
         if(!request)//请求为空
             continue;
         connectionRAII mysqlcon(&request->mysql, m_connpool);
         request->Process();//需要保证类型T有process函数
-    }   
+    }  
+
 }
 
 #endif

@@ -36,7 +36,7 @@ public:
     virtual void* AddTimer(HttpConn* hc,unsigned int delay) override
     {
         int set_time=time(nullptr)+delay;
-        HeapTimer*timer=new HeapTimer(hc,set_time);
+        HeapTimer* timer=new HeapTimer(hc,set_time);
         if(cur_size>=capacity)
             Resize();//数组满了则分配更大的内存
         int child=cur_size++;//新定时器指针初始插入位置
@@ -57,7 +57,7 @@ public:
     {
         if(!timer_)
             return;
-        HeapTimer* timer=(HeapTimer*) timer;
+        HeapTimer* timer=(HeapTimer*) timer_;
         timer->expire=time(nullptr)+delay;
         PercolateDown(timer->index);
     }

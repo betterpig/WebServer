@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include "../http_conn.h"
 
-#define TIMESLOT 1000
+#define TIMESLOT 5
 
 class TimerContainer;//定时器容器借口类
 class TimerContainerBase//定时器容器抽象基类：统一函数接口

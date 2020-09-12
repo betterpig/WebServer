@@ -116,7 +116,7 @@ void Log::WriteLog(int level,const char* format,...)
     va_start(valst,format);
     string log_str;
     locker.Lock();
-    //因为snprintf在将字符串复制到m_buf所指向的内存中时，会在结尾加‘\0'空字符，所以不用每次给m_buf清零也可以
+    memset(m_buf,'\0',m_log_buf_size*sizeof(char));
     int n=snprintf(m_buf,48,"%d-%02d-%02d %02d:%02d:%02d.%06ld %s",//m_buf是所有线程共享的，所以要上锁
                     my_tm.tm_year+1900,my_tm.tm_mon+1,my_tm.tm_mday,
                     my_tm.tm_hour,my_tm.tm_min,my_tm.tm_sec,now.tv_usec,s);

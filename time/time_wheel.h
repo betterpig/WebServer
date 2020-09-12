@@ -146,7 +146,7 @@ public:
                 }
             }
         }
-        cur_slot=++cur_slot%N;//当前槽运行到下一个槽
+        cur_slot=(++cur_slot)%2;//当前槽运行到下一个槽
         alarm(TIMESLOT);
     }
 };

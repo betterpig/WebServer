@@ -1,13 +1,13 @@
 #include "connection_pool.h"
 #include "log.h"
 
-connection_pool* connection_pool::GetInstance()
+ConnectionPool* ConnectionPool::GetInstance()
 {
-    static connection_pool connPool;
+    static ConnectionPool connPool;
     return &connPool;
 }
 
-void connection_pool::init(string url,int port,string user,string password,string dbname,unsigned int maxconn)
+void ConnectionPool::init(string url,int port,string user,string password,string dbname,unsigned int maxconn)
 {
     this->url=url;
     this->port=port;
@@ -38,7 +38,7 @@ void connection_pool::init(string url,int port,string user,string password,strin
     sem_init(&sem,0,maxconn);
 }
 
-connection_pool::~connection_pool()
+ConnectionPool::~ConnectionPool()
     {
         //DestroyPool();
         //locker.Lock();
@@ -59,7 +59,7 @@ connection_pool::~connection_pool()
         sem_destroy(&sem);
     }
 
-MYSQL* connection_pool::GetConnection()
+MYSQL* ConnectionPool::GetConnection()
 {
     MYSQL* con=nullptr;
     if(conn_queue.size()==0)
@@ -74,7 +74,7 @@ MYSQL* connection_pool::GetConnection()
     return con;
 }
 
-bool connection_pool::ReleaseConnection(MYSQL* conn)
+bool ConnectionPool::ReleaseConnection(MYSQL* conn)
 {
     if(conn==nullptr)
         return false;

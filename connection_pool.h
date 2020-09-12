@@ -8,11 +8,11 @@
 
 using namespace std;
 
-class connection_pool
+class ConnectionPool
  {
  public:
     //局部静态变量单例模式
-    static connection_pool *GetInstance();
+    static ConnectionPool *GetInstance();
     void init(string url,int port,string user,string password,string dbname,unsigned int maxconn);
     MYSQL* GetConnection();
     bool ReleaseConnection(MYSQL* conn);
@@ -28,14 +28,14 @@ class connection_pool
     sem_t sem;
     //Locker locker;
     pthread_mutex_t mtx;
-    connection_pool(){}
-    ~connection_pool();
+    ConnectionPool(){}
+    ~ConnectionPool();
 };
 
 class connectionRAII
 {
 public:
-    connectionRAII(MYSQL** con,connection_pool* connpool)
+    connectionRAII(MYSQL** con,ConnectionPool* connpool)
     {
         *con=connpool->GetConnection();
         conRAII=*con;
@@ -47,7 +47,7 @@ public:
     }
 private:
     MYSQL* conRAII;
-    connection_pool* poolRAII;
+    ConnectionPool* poolRAII;
 };
 
 #endif
