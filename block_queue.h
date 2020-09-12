@@ -37,6 +37,7 @@ public:
 
         pthread_cond_broadcast(m_cond);//加入了元素，那肯定要通知等待该条件变量的线程
         pthread_mutex_unlock(m_mutex);//解锁
+        return true;
     }
 
     bool pop(T& item)

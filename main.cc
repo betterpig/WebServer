@@ -116,8 +116,8 @@ int main(int argc,char *argv[])
     //init参数：ip，端口（0表示默认），数据库用户名，数据库密码，数据库名，连接池中连接个数
     connpool->init("localhost",0,"root","123","db",5);
 
-    ThreadPool<HttpConn>* pool=nullptr;
-    pool=new ThreadPool<HttpConn> (connpool);//建立线程池
+    ThreadPool* pool=nullptr;
+    pool=new ThreadPool (connpool);//建立线程池
 
     TimerContainer timer_container(HEAP);//定时器容器
     HttpConn* users=new HttpConn[MAX_FD];//建立HTTP客户对象数组

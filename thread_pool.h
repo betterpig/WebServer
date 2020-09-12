@@ -8,14 +8,13 @@
 #include "connection_pool.h"
 #include "log.h"
 
-template<typename T>//模板参数T是任务类
 class ThreadPool
 {
 private:
     int m_thread_number;//线程池中的线程数量
     int m_max_requests;//请求队列中的最大请求数
     pthread_t* m_threads;//线程池id数组
-    std::queue<T*> m_work_queue;//请求队列
+    BlockQueue<HttpConn*> *m_work_queue;//请求队列
     Locker m_queue_locker;//保护请求队列的互斥锁
     Sem m_queue_stat;//表明是否有任务需要处理的信号量
     bool m_stop;//线程结束的标志
@@ -24,13 +23,11 @@ private:
     void Run();
 
 public:
-    ThreadPool(ConnectionPool* connpool,int thread_number=8,int max_requests=10000);
+    ThreadPool(ConnectionPool* connpool,BlockQueue<HttpConn*> *work_queue,int thread_number=8,int max_requests=10000);
     ~ThreadPool();
-    bool Append(T* request);
 };
 
-template<typename T>
-ThreadPool<T>::ThreadPool(ConnectionPool* connpool,int thread_number,int max_requests)
+ThreadPool::ThreadPool(ConnectionPool* connpool,BlockQueue<HttpConn*> *work_queue,int thread_number,int max_requests)
 :m_thread_number(thread_number),m_max_requests(max_requests),m_stop(false),m_threads(nullptr),m_connpool(connpool)
 {
     if((thread_number<=0) || (max_requests<=0))
@@ -56,46 +53,27 @@ ThreadPool<T>::ThreadPool(ConnectionPool* connpool,int thread_number,int max_req
     }
 }
 
-template<typename T>
-ThreadPool<T>::~ThreadPool()
+ThreadPool::~ThreadPool()
 {
     delete []m_threads;//只是删除线程数组就好了。因为线程自己会退出
     m_stop=true;
 }
 
-template<typename T>
-bool ThreadPool<T>::Append(T* request)
-{
-    m_queue_locker.Lock();//上锁，保证同一时间只有一个线程操作请求队列
-
-    if(m_work_queue.size()>m_max_requests)//请求队列满，则解锁，返回错误
-    {
-        m_queue_locker.Unlock();
-        return false;
-    }
-    m_work_queue.push(request);//将请求放到队列最后
-    m_queue_locker.Unlock();//解锁
-    m_queue_stat.Post();//将信号量+1，
-    return true;
-}
-
-template<typename T>
-void* ThreadPool<T>::Worker(void* arg)
+void* ThreadPool::Worker(void* arg)
 {
     ThreadPool* pool=(ThreadPool*) arg;
     pool->Run();
     return pool;
 }
 
-template<typename T>
-void ThreadPool<T>::Run()
+void ThreadPool::Run()
 {
     while(!m_stop)
     {
         m_queue_stat.Wait();//阻塞，等待有请求来到.若某线程被唤醒，则执行-1操作并返回
         m_queue_locker.Lock();//请求来到，给请求队列上锁，避免同时有两个线程取请求，或者主线程在加请求工作线程在取请求
 
-        T* request=m_work_queue.front();//取出队列头
+        HttpConn* request=m_work_queue.front();//取出队列头
         m_work_queue.pop();//将队列头popk
 
         m_queue_locker.Unlock();//解锁
