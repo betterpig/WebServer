@@ -19,61 +19,68 @@ public:
     {
         sem_destroy(&m_sem);
     }
-    bool Wait() {return sem_wait(&m_sem) ==0; }
-    bool Post() {return sem_post(&m_sem)==0; }
+    bool wait() {return sem_wait(&m_sem) ==0; }
+    bool post() {return sem_post(&m_sem)==0; }
 };
 
-class Locker//互斥锁
+class MutexLock//互斥锁
 {
 private:
-    pthread_mutex_t m_mutex;
+    pthread_mutex_t mutex_;
 public:
-    Locker()
+    MutexLock()
     {
-        if(pthread_mutex_init(&m_mutex,nullptr) !=0 )
+        if(pthread_mutex_init(&mutex_,nullptr) !=0 )
             throw std::exception();
     }
-    ~Locker()
+    ~MutexLock()
     {
-        pthread_mutex_destroy(&m_mutex);
+        pthread_mutex_destroy(&mutex_);
     }
-
-    bool Lock() {return pthread_mutex_lock(&m_mutex) ==0; }
-    bool Unlock()   {return pthread_mutex_unlock(&m_mutex); }
+    pthread_mutex_t* GetPthreadMutex() { return &mutex_; }
+    bool lock() { return pthread_mutex_lock(&mutex_) ==0; }
+    bool unlock()   { return pthread_mutex_unlock(&mutex_) == 0; }
 };
+
+class MutexLockGuard
+{
+public:
+    explicit MutexLockGuard(MutexLock& mutex):mutex_(mutex)
+    {
+        mutex_.lock();
+    }
+    ~MutexLockGuard()
+    {
+        mutex_.unlock();
+    }
+private:
+    MutexLock& mutex_;
+};
+
 
 class ConditionalPara//条件变量
 {
 private:
-    pthread_mutex_t m_mutex;//条件变量需要用到锁
-    pthread_cond_t m_cond;
+    MutexLock& mutex_;//条件变量需要用到锁
+    pthread_cond_t cond_;
 
 public:
-    ConditionalPara()
+    ConditionalPara(MutexLock& mutex):mutex_(mutex)
     {
-        if(pthread_mutex_init(&m_mutex,nullptr)!=0)//初始化锁
-            throw std::exception();
-        if(pthread_cond_init(&m_cond,nullptr)!=0)//初始化条件变量
-        {
-            pthread_mutex_destroy(&m_mutex);//失败的话把锁给释放了
-            throw std::exception();
-        }
+        pthread_cond_init(&cond_,nullptr);//初始化条件变量
     }
     ~ConditionalPara()
     {
-        pthread_mutex_destroy(&m_mutex);
-        pthread_cond_destroy(&m_cond);
+        pthread_cond_destroy(&cond_);
     }
 
-    bool Wait()
+    bool wait()
     {
-        int ret=0;
-        pthread_mutex_lock(&m_mutex);
-        ret=pthread_cond_wait(&m_cond,&m_mutex);//在调用该函数之前，就要对锁加锁
-        pthread_mutex_unlock(&m_mutex);
+        int ret=pthread_cond_wait(&cond_,mutex_.GetPthreadMutex());//在调用该函数之前，就要对锁加锁
         return ret==0;
     }
-    bool Signal()   {return pthread_cond_signal(&m_cond)==0;}
+    bool notify()   {return pthread_cond_signal(&cond_)==0;}
+    bool NotifyAll()    {return pthread_cond_broadcast(&cond_)==0;}
 };
 
 #endif

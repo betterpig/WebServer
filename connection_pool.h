@@ -18,6 +18,7 @@ class ConnectionPool
     bool ReleaseConnection(MYSQL* conn);
     void DestroyPool();
     
+    
  private:
     string url;
     int port;

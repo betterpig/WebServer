@@ -1,12 +1,10 @@
 #ifndef THREAD_POOL_H
 #define THREAD_POOL_H
 
-#include <list>
-#include <cstdio>
-#include <pthread.h>
-#include "locker.h"
 #include "connection_pool.h"
 #include "log.h"
+#include "block_queue.h"
+#include "locker.h"
 
 class ThreadPool
 {
@@ -14,21 +12,19 @@ private:
     int m_thread_number;//线程池中的线程数量
     int m_max_requests;//请求队列中的最大请求数
     pthread_t* m_threads;//线程池id数组
-    BlockQueue<HttpConn*> *m_work_queue;//请求队列
-    Locker m_queue_locker;//保护请求队列的互斥锁
-    Sem m_queue_stat;//表明是否有任务需要处理的信号量
+    BlockQueue<HttpConn*>* m_work_queue;//请求队列
     bool m_stop;//线程结束的标志
     ConnectionPool* m_connpool;
     static void* Worker(void* arg);
     void Run();
 
 public:
-    ThreadPool(ConnectionPool* connpool,BlockQueue<HttpConn*> *work_queue,int thread_number=8,int max_requests=10000);
+    ThreadPool(ConnectionPool* connpool,BlockQueue<HttpConn*>* work_queue,int thread_number=8,int max_requests=10000);
     ~ThreadPool();
 };
 
 ThreadPool::ThreadPool(ConnectionPool* connpool,BlockQueue<HttpConn*> *work_queue,int thread_number,int max_requests)
-:m_thread_number(thread_number),m_max_requests(max_requests),m_stop(false),m_threads(nullptr),m_connpool(connpool)
+:m_thread_number(thread_number),m_max_requests(max_requests),m_stop(false),m_threads(nullptr),m_connpool(connpool),m_work_queue(work_queue)
 {
     if((thread_number<=0) || (max_requests<=0))
         throw std::exception();
@@ -70,13 +66,9 @@ void ThreadPool::Run()
 {
     while(!m_stop)
     {
-        m_queue_stat.Wait();//阻塞，等待有请求来到.若某线程被唤醒，则执行-1操作并返回
-        m_queue_locker.Lock();//请求来到，给请求队列上锁，避免同时有两个线程取请求，或者主线程在加请求工作线程在取请求
-
-        HttpConn* request=m_work_queue.front();//取出队列头
-        m_work_queue.pop();//将队列头popk
-
-        m_queue_locker.Unlock();//解锁
+        HttpConn* request=nullptr;
+        m_work_queue->pop(request);//取出队列头
+        
         if(!request)//请求为空
             continue;
         connectionRAII mysqlcon(&request->mysql, m_connpool);

@@ -1,39 +1,17 @@
 #ifndef HTTP_CONNECTION_H
 #define HTTP_CONNECTION_H
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <assert.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <errno.h>
-#include <stdlib.h>
-#include <string.h>
-#include <fcntl.h>
-#include <sys/epoll.h>
-#include <signal.h>
-#include <sys/wait.h>
-#include <sys/stat.h>
-#include <pthread.h>
-#include <sys/mman.h>
-#include <stdarg.h>
-#include <sys/uio.h>
-#include <string>
 #include "locker.h"
 #include <mysql/mysql.h>
-#include <map>
-#include <string>
 #include "session.h"
-#include <unordered_map>
-//#include "time/timer_base.h"
+#include "common.h"
+
 using namespace std;
 
-//#define REACTOR
+#define REACTOR
 
 class ConnectionPool;
-
+class TimerContainer;
 class HttpConn
 {
 public:
@@ -61,10 +39,10 @@ public:
     //TimerContainer* timer_container;
     MYSQL* mysql;
     sockaddr_in m_address;
+    static TimerContainer* timer_container;
 
 private:
     int m_sockfd;
-    
     char m_read_buf[READ_BUFFER_SIZE];//读缓冲区
     int m_read_idx;//已经读入的客户数据的最后一个字节的下一个位置
     int m_checked_idx;//当前正在分析的字符在读缓冲区的位置
@@ -90,8 +68,9 @@ private:
     int m_iv_count;//被写内存块的数量
 
     static map<string,string> users;
-    static Locker locker;
+    static MutexLock mutex_;
     static unordered_map<string,Session*> sessions;
+    
     
 public:
     HttpConn(){}
@@ -121,7 +100,6 @@ private:
     bool AddHeaders(int content_length);//加首部行
     void Unmap();//释放给定的有mmap创建的内存空间
     
-
 };
 
 #endif

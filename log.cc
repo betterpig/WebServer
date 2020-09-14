@@ -89,7 +89,7 @@ void Log::WriteLog(int level,const char* format,...)
         break;
     }
 
-    locker.Lock();//涉及到日志文件的关闭和创建，加锁。因为很可能多个线程同时遇到该情况
+    mutex_.lock();//涉及到日志文件的关闭和创建，加锁。因为很可能多个线程同时遇到该情况
     m_count++;
     if(m_today!=my_tm.tm_mday || m_count % m_split_lines==0)//如果不是同一天，或者已经到达了最大行数，就生成新的日志文件
     {
@@ -111,11 +111,10 @@ void Log::WriteLog(int level,const char* format,...)
         m_fp=fopen(new_log,"a");//以追加的方式打开文件，可读可写
     }
 
-    locker.Unlock();
     va_list valst;//可变参数的解析
     va_start(valst,format);
     string log_str;
-    locker.Lock();
+
     memset(m_buf,'\0',m_log_buf_size*sizeof(char));
     int n=snprintf(m_buf,48,"%d-%02d-%02d %02d:%02d:%02d.%06ld %s",//m_buf是所有线程共享的，所以要上锁
                     my_tm.tm_year+1900,my_tm.tm_mon+1,my_tm.tm_mday,
@@ -125,7 +124,7 @@ void Log::WriteLog(int level,const char* format,...)
     m_buf[n+m]='\r';
     m_buf[n+m+1]='\n';
     log_str=m_buf;//用char*指针给string类型对象赋值，则会将char*所指向的字符串复制给string
-    locker.Unlock();
+    mutex_.unlock();
     if(m_is_async)//如果异步则将string加入到阻塞队列中
     //这里原作者是写成了 if(m_is_async && !m_log_queue->full())，其意图是当队列满时直接写到文件缓冲区中，相当于转异步为同步
     {
@@ -134,15 +133,14 @@ void Log::WriteLog(int level,const char* format,...)
     }
     else
     {
-        locker.Lock();
+        MutexLockGuard guard(mutex_);
         fputs(log_str.c_str(),m_fp);
-        locker.Unlock();
     }
 }
 
 void Log::Flush(void)
 {
-    locker.Lock();
+    MutexLockGuard guard(mutex_);
     fflush(m_fp);//强制刷新缓冲区
-    locker.Unlock();
+
 }

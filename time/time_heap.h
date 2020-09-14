@@ -21,7 +21,7 @@ private:
 public:
     TimeHeap():capacity(50),cur_size(0)
     {
-        array=new HeapTimer* [capacity];//定时器结构体指针数组
+        array=new HeapTimer*[capacity];//定时器结构体指针数组
         for(int i=0;i<capacity;++i)
             array[i]=nullptr;//每个元素都置为空指针
     }
@@ -43,10 +43,11 @@ public:
         int parent=0;
         for(;child>0;child=parent)//上浮
         {
-            parent=(child-1)/2;//定时器父节点
-            if(array[parent]->expire<=timer->expire)//直到给插入节点找到合适的位置，类似插入排序
+            parent = (child-1)/2;//定时器父节点
+            if(array[parent]->expire <= timer->expire)//直到给插入节点找到合适的位置，类似插入排序
                 break;
-            array[child]=array[parent];//如果父节点的终止时间大于插入定时器的终止时间，则把父节点拉下来，
+            else
+                array[child] = array[parent];//如果父节点的终止时间大于插入定时器的终止时间，则把父节点拉下来，
         }
         array[child]=timer;//把插入节点放在break的位置
         timer->index=child;
@@ -66,17 +67,20 @@ public:
     {//最小堆只能删除最顶端数据
         if(!timer_)
             return;
-        HeapTimer* timer=(HeapTimer*) timer;
-        if(timer!=array[cur_size])
+        HeapTimer* timer=(HeapTimer*) timer_;
+        if(timer!=array[cur_size-1])//这里有问题，当前面的定时器删除后，后面的定时器的索引都应该更新，这里没执行这一步
         {
-            int temp_index=timer->index;
-            array[timer->index]=array[cur_size--];
+            int temp_index = timer->index;
+            array[timer->index] = array[cur_size-1];
+            array[cur_size-1]=nullptr;
+            cur_size--;
             delete timer;
             PercolateDown(temp_index);
         }
         else
         {
             delete timer;
+            array[cur_size-1]=nullptr;
             cur_size--;
         }
     }
@@ -88,7 +92,7 @@ public:
         {
             if(!array[0])
                 break;
-            if(array[0]->expire>cur)
+            if(array[0]->expire > cur)
                 break;
             //终止时间小于当前时间，就要先关闭连接，然后抛出该元素
             array[0]->user_data->CloseConn();
@@ -98,7 +102,7 @@ public:
             alarm(TIMESLOT);
         else
         {
-            int time_interval=top()->expire-cur;
+            int time_interval=top()->expire - cur;
             alarm(time_interval);
         }
     }

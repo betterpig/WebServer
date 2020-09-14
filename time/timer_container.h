@@ -8,7 +8,7 @@
 #include "../log.h"
 
 enum timer_type {SORTLIST=0,HEAP,WHEEL};//定时器容器类型
-char* type_to_string[]={"SORTLIST","HEAP","WHEEL"};
+static char* type_to_string[]={"SORTLIST","HEAP","WHEEL"};
 class TimerContainer//定时器容器接口类
 {
 public:

@@ -1,5 +1,5 @@
-server : main.cc connection_pool.cc http_conn.cc log.cc
-		g++ main.cc connection_pool.cc http_conn.cc log.cc -lpthread -L/usr/lib64/mysql -lmysqlclient -g -static-libgcc -lrt -o server
+server : main.cc connection_pool.cc http_conn.cc log.cc server.cc
+		g++ main.cc connection_pool.cc http_conn.cc log.cc server.cc -lpthread -L/usr/lib64/mysql -lmysqlclient -g -static-libgcc -lrt -o server
 
 .PHONY : clean
 clean :

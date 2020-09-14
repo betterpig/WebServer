@@ -1,11 +1,11 @@
 #include "http_conn.h"
 #include "connection_pool.h"
-#include "log.h"
-#include <netinet/in.h>
+#include "server.h"
+#include "time/timer_container.h"
 
 const char* ok_200_title="OK";
 const char* error_400_title="Bad Request";
-const char* error_400_form="Your request has bad syntax or is inherently impossible to saticfy.\n";
+const char* error_400_form="request has bad syntax or is inherently impossible to saticfy.\n";
 const char* error_403_title="Forbidden";
 const char* error_403_form="You do not have permission to get file from this server.\n";
 const char* error_404_title="Not Found";
@@ -14,51 +14,19 @@ const char* error_500_title="Internal Error";
 const char* error_500_form="There was an unusual problem serving the requested file.\n";
 const char* doc_root="/home/sing/code/WebServer/root";
 
-int SetNonBlocking(int fd)//将文件描述符设为非阻塞状态
-{
-    int old_option = fcntl(fd,F_GETFL);//获取文件描述符旧的状态标志
-    int new_option= old_option | O_NONBLOCK;//定义新的状态标志为非阻塞
-    fcntl(fd,F_SETFL,new_option);//将文件描述符设置为新的状态标志-非阻塞
-    return old_option;//返回旧的状态标志，以便日后能够恢复
-}
-
-void Addfd(int epollfd,int fd,bool oneshot)//往内核事件表中添加需要监听的文件描述符
-{
-    epoll_event event;//定义epoll_event结构体对象
-    event.data.fd=fd;
-    event.events=EPOLLIN | EPOLLET | EPOLLRDHUP;//设置为ET模式：同一就绪事件只会通知一次
-    if(oneshot)
-        event.events |= EPOLLONESHOT;
-    epoll_ctl(epollfd,EPOLL_CTL_ADD,fd,&event);//往该内核时间表中添加该文件描述符和相应事件
-    SetNonBlocking(fd);//因为已经委托内核时间表来监听事件是否就绪，所以该文件描述符可以设置为非阻塞
-}
-
-static void Removefd(int epollfd,int fd)//将文件描述符fd从内核事件表中移除，并关闭该文件
-{
-    epoll_ctl(epollfd,EPOLL_CTL_DEL,fd,0);
-    close(fd);
-}
-
-void Modfd(int epollfd,int fd,int ev)//在内核事件表中修改该文件的注册事件
-{
-    epoll_event event;
-    event.data.fd=fd;
-    event.events=ev | EPOLLET | EPOLLONESHOT | EPOLLRDHUP;//并上给定事件，ET、ONESHOT、RDHUP（TCP连接被对方关闭）这三个一直有
-    epoll_ctl(epollfd,EPOLL_CTL_MOD,fd,&event);
-}
-
 int HttpConn::m_user_count=0;//类的静态数据成员只能在类外以类作用域的方式定义并初始化
 int HttpConn::m_epollfd=-1;
 map<string,string> HttpConn::users;
-Locker HttpConn:: locker;
+MutexLock HttpConn:: mutex_;
 unordered_map<string,Session*> HttpConn::sessions;
+TimerContainer* HttpConn::timer_container=nullptr;
 
 void HttpConn::CloseConn(bool real_close)
 {
     LOG_INFO("close connection %d",ntohs(m_address.sin_port));
     if(real_close && (m_sockfd!=-1))//检查连接描述符是否有效
     {
-        Removefd(m_epollfd,m_sockfd);
+        Server::GetServer()->Removefd(m_sockfd);
         m_sockfd=-1;
         m_user_count--;//客户数量减一
     }
@@ -69,9 +37,6 @@ void HttpConn::Init(int sockfd,const sockaddr_in& addr)
 {
     m_sockfd=sockfd;//给类内数据成员赋值
     m_address=addr;
-    int reuse=1;
-    setsockopt(m_sockfd,SOL_SOCKET,SO_REUSEADDR,&reuse,sizeof(reuse));//强制进程立即使用处于TIME_WAIT状态的端口
-    Addfd(m_epollfd,sockfd,true);//将该连接描述符添加到内核事件表中
     m_user_count++;//客户数量加一
     Init();//类的其他数据成员初始化
 }
@@ -393,12 +358,12 @@ HttpConn::HTTP_CODE HttpConn::DoRequest()//分析客户请求的目标文件，�
                 strcat(sql_insert,passward);
                 strcat(sql_insert,"')");
                 
-                locker.Lock();
+                MutexLockGuard guard(mutex_);
                 int res=mysql_query(mysql,sql_insert);
                 if(res)
                     LOG_ERROR("MySQL query failed, %s",mysql_error(mysql));
                 users.insert(pair<string,string>(name,passward));
-                locker.Unlock();
+
                 free(sql_insert);
 
                 if(!res)
@@ -586,7 +551,7 @@ bool HttpConn::Write()//通过writev把要发送的东西发送出去
         bytes_to_send+=m_iv[i].iov_len;
     if(bytes_to_send==0)//写缓冲区还没数据
     {
-        Modfd(m_epollfd,m_sockfd,EPOLLIN);//继续监听可读事件
+        Server::GetServer()->Modfd(m_sockfd,EPOLLIN);//继续监听可读事件
         Init();
         return true;
     }
@@ -610,7 +575,7 @@ bool HttpConn::Write()//通过writev把要发送的东西发送出去
                     m_iv[0].iov_len=m_iv[0].iov_len-bytes_have_send;
                     m_iv[0].iov_base=m_write_buf+bytes_have_send;
                 }
-                Modfd(m_epollfd,m_sockfd,EPOLLOUT);//监听连接描述符上的可写事件，等可写了继续写之前没写完的内容
+                Server::GetServer()->Modfd(m_sockfd,EPOLLOUT);
                 return true;
             }
             Unmap();//释放映射内存
@@ -626,12 +591,12 @@ bool HttpConn::Write()//通过writev把要发送的东西发送出去
             if(m_linger)//根据linger决定是否要关闭连接
             {
                 Init();
-                Modfd(m_epollfd,m_sockfd,EPOLLIN);//重置oneshot，重新监听可读事件
+                Server::GetServer()->Modfd(m_sockfd,EPOLLIN);//重置oneshot，重新监听可读事件
                 return true;
             }
             else
             {
-                Modfd(m_epollfd,m_sockfd,EPOLLIN);//都要关闭连接了，干嘛还要修改
+                Server::GetServer()->Modfd(m_sockfd,EPOLLIN);//都要关闭连接了，干嘛还要修改
                 return false;
             }
         }
@@ -642,32 +607,38 @@ void HttpConn::Process()
 {
     #ifdef REACTOR
     {
-        if(!Read())//成功读取到HTTP请求
+        if(!Read())
         {
+            //timer_container->DeleteTimer(timer);
             CloseConn();//读失败，关闭连接}
             return;
         }
+        else
+            timer_container->AdjustTimer(timer,3*TIMESLOT);
     }
     #endif
 
     HTTP_CODE read_ret=ProcessRead();//读取HTTP报文
     if(read_ret==NO_REQUEST)
     {
-        Modfd(m_epollfd,m_sockfd,EPOLLIN);//没有请求，就重置该连接描述符的oneshot事件，让该连接描述符可以被其他线程接管
+        Server::GetServer()->Modfd(m_sockfd,EPOLLIN);//没有请求，就重置该连接描述符的oneshot事件，让该连接描述符可以被其他线程接管
         return;
     }
     bool write_ret=ProcessWrite(read_ret);//根据状态码发送不同的HTTP响应报文
     if(!write_ret)//写失败，关闭连接
         CloseConn();
+
     #ifdef REACTOR
     {
         if(!Write())//写失败或者是短连接
-            {
-                
-                CloseConn();//关闭连接
-            }
+        {
+            //timer_container->DeleteTimer(timer);
+            CloseConn();//关闭连接
+        }
+        else
+            timer_container->AdjustTimer(timer,3*TIMESLOT);
     }
     #endif
 
-    Modfd(m_epollfd,m_sockfd,EPOLLOUT);//写成功则注册该连接描述符上的可写事件，当发送缓冲有空位时，就可写，就能调用write函数，把要发送的数据写到发送缓冲中，等待发送出去了
+    Server::GetServer()->Modfd(m_sockfd,EPOLLOUT);//写成功则注册该连接描述符上的可写事件，当发送缓冲有空位时，就可写，就能调用write函数，把要发送的数据写到发送缓冲中，等待发送出去了
 }

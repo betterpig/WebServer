@@ -33,10 +33,9 @@ private:
         string single_log;//这里本来队列中就保存了要写的内容，这里又定义了string对象，重复了，要是能把string的指针传回来，就可以省空间
         while(m_log_queue->pop(single_log))
         {
-            locker.Lock();//给日志文件上锁，确保同一时间只有一个线程在写文件，不然可能不同线程的内容凑在一起了
+            MutexLockGuard guard(mutex_);//给日志文件上锁，确保同一时间只有一个线程在写文件，不然可能不同线程的内容凑在一起了
             fputs(single_log.c_str(),m_fp);
             fflush(m_fp);
-            locker.Unlock();
         }
     }
 
@@ -51,7 +50,7 @@ private:
     char* m_buf;//写缓冲区
     BlockQueue<string>* m_log_queue;//阻塞队列
     bool m_is_async;//是否异步写
-    Locker locker;//锁
+    MutexLock mutex_;//锁
 };
 
 #define LOG_DEBUG(format,...) Log::GetInstance()->WriteLog(0,format,__VA_ARGS__)//宏定义，遇到时直接替换成后面的内容
