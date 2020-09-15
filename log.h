@@ -20,6 +20,7 @@ public:
     static void* FlushLogThread(void* args)//写线程要绑定的函数
     {
         Log::GetInstance()->AsyncWriteLog();
+        pthread_exit(0);
     }
 
     void WriteLog(int level,const char* format,...);//将内容写到缓冲区，变参数
@@ -27,7 +28,7 @@ public:
 
 private:
     Log();
-    virtual ~Log();
+    ~Log();
     void* AsyncWriteLog()
     {
         string single_log;//这里本来队列中就保存了要写的内容，这里又定义了string对象，重复了，要是能把string的指针传回来，就可以省空间
@@ -40,6 +41,7 @@ private:
     }
 
 private:
+    pthread_t tid;
     char dir_name[128];//目录名
     char log_name[128];//文件名
     int m_split_lines;//最大行数

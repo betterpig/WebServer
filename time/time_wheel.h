@@ -73,7 +73,8 @@ public:
         }
         else
         {
-            timer->prev->next=timer->next;//将要删除节点的前驱节点的next指向要删除节点的后继节点
+            if(timer->prev)
+                timer->prev->next=timer->next;//将要删除节点的前驱节点的next指向要删除节点的后继节点
             if(timer->next)
                 timer->next->prev=timer->prev;//将要删除节点的后继节点的prev指向要删除节点的前驱节点
         }
@@ -107,7 +108,8 @@ public:
         }
         else
         {
-            timer->prev->next=timer->next;//将要删除节点的前驱节点的next指向要删除节点的后继节点
+            if(timer->prev)
+                timer->prev->next=timer->next;//将要删除节点的前驱节点的next指向要删除节点的后继节点
             if(timer->next)
                 timer->next->prev=timer->prev;//将要删除节点的后继节点的prev指向要删除节点的前驱节点
             delete timer;

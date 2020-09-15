@@ -3,9 +3,14 @@
 
 #include "locker.h"
 
+class ThreadPool;
+class Log;
+
 template<typename T>
 class BlockQueue//阻塞队列类
 {
+friend ThreadPool;
+friend Log;
 public:
     BlockQueue(int max_size=1000):mutex_(),cond_(mutex_)
     {
@@ -20,9 +25,8 @@ public:
 
     ~BlockQueue()
     {
-        m_stop=true;
-        cond_.NotifyAll();
         delete []m_array;
+        printf("thread %d's block_queue destruct\n",pthread_self());
     }
 
     bool push(const T& item)
@@ -46,9 +50,9 @@ public:
     bool pop(T& item)
     {//这里有个问题。多个线程在wait时，我又想结束程序，似乎没有什么方法可以让线程结束等待，回到上级函数并通过stop标志终止循环
         mutex_.lock();//与cond_wait里的mutex是同一把锁，相当于有两个功能：一是给阻塞队列上锁，确保同一时间只有一个线程在取元素，
-        while(m_size<=0) //队列没有元素的话，线程将一直循环等待，而且由于外面上了锁，
+        while(m_size<=0 && !m_stop) //队列没有元素的话，线程将一直循环等待，而且由于外面上了锁，
         {//如果有多个写线程，那么其他线程都在等待获得锁，只有这个线程在阻塞，等待队列有元素
-            if(!cond_.wait() || m_stop)//二是给该条件变量对应的线程队列上锁，保证同一时间只有一个线程入队，
+            if(!cond_.wait())//二是给该条件变量对应的线程队列上锁，保证同一时间只有一个线程入队，
             {//才不会打乱顺序或者一个出队拿了资源另一个又以为还有资源,
             //所以顺序是：调用cond_wait之前上锁，保证只有一个线程能调用cond_wait，然后该线程将放入等待条件变量的队列中，然后解锁，此时其它线程也可以进入该等待条件变量的队列
             //然后cond_wait返回后，还要上锁，这是为了保持原来没有调用该函数时的状态
@@ -58,11 +62,19 @@ public:
             //所以该函数一共有三个阶段：一：将本线程放入等待条件变量的线程队列过程 二：放入后，解锁，阻塞等待broadcast 三：被激活，上锁，函数返回
             //当函数返回成功时，说明有线程调用了broadcast，也就说明此时队列不为空， 那外层的while循环中断，程序顺序执行
         }
-        m_front=(m_front+1) % m_max_size;//对头往后移动
-        item=m_array[m_front];//取出队头
-        m_size--;//元素个数减一
-        mutex_.unlock();//解锁
-        return true;
+        if(m_size>0)
+        {
+            m_front=(m_front+1) % m_max_size;//对头往后移动
+            item=m_array[m_front];//取出队头
+            m_size--;//元素个数减一
+            mutex_.unlock();//解锁
+            return true;
+        }
+        else
+        {
+            mutex_.unlock();
+            return false;
+        }
     }
 
     bool full()

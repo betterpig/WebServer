@@ -596,7 +596,7 @@ bool HttpConn::Write()//通过writev把要发送的东西发送出去
             }
             else
             {
-                Server::GetServer()->Modfd(m_sockfd,EPOLLIN);//都要关闭连接了，干嘛还要修改
+                //Server::GetServer()->Modfd(m_sockfd,EPOLLIN);//都要关闭连接了，干嘛还要修改
                 return false;
             }
         }
@@ -609,7 +609,7 @@ void HttpConn::Process()
     {
         if(!Read())
         {
-            //timer_container->DeleteTimer(timer);
+            timer_container->DeleteTimer(timer);
             CloseConn();//读失败，关闭连接}
             return;
         }
@@ -626,19 +626,24 @@ void HttpConn::Process()
     }
     bool write_ret=ProcessWrite(read_ret);//根据状态码发送不同的HTTP响应报文
     if(!write_ret)//写失败，关闭连接
+    {
         CloseConn();
+        return;
+    }
 
     #ifdef REACTOR
     {
         if(!Write())//写失败或者是短连接
         {
-            //timer_container->DeleteTimer(timer);
+            timer_container->DeleteTimer(timer);
             CloseConn();//关闭连接
         }
         else
             timer_container->AdjustTimer(timer,3*TIMESLOT);
     }
+    #else
+    {
+        Server::GetServer()->Modfd(m_sockfd,EPOLLOUT);//写成功则注册该连接描述符上的可写事件，当发送缓冲有空位时，就可写，就能调用write函数，把要发送的数据写到发送缓冲中，等待发送出去了
+    }
     #endif
-
-    Server::GetServer()->Modfd(m_sockfd,EPOLLOUT);//写成功则注册该连接描述符上的可写事件，当发送缓冲有空位时，就可写，就能调用write函数，把要发送的数据写到发送缓冲中，等待发送出去了
 }

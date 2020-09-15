@@ -12,12 +12,19 @@ Log::Log()
 
 Log::~Log()
 {
+    m_log_queue->m_stop=true;
+    m_log_queue->cond_.NotifyAll();
+    if(pthread_join(tid,NULL)==0)
+        printf("log thread exit %d\n",tid);
+    else
+        perror("log thread exit error:");
     if(!m_fp)
     {
         Flush();
         fclose(m_fp);
     }
     delete m_buf;
+    delete m_log_queue;
 }
 
 bool Log::init(const char* file_name,int log_buf_size,int split_lines,int max_queue_size)
@@ -26,8 +33,8 @@ bool Log::init(const char* file_name,int log_buf_size,int split_lines,int max_qu
     {
         m_is_async=true;
         m_log_queue=new BlockQueue<string> (max_queue_size);//生成阻塞队列
-        pthread_t tid;
         pthread_create(&tid,nullptr,FlushLogThread,nullptr);//创建往文件中写日志的线程
+        //LOG_INFO("create thread %d for log",tid);
     }
 
     m_log_buf_size=log_buf_size;

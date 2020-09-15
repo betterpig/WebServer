@@ -3,7 +3,6 @@
 
 #define MAX_FD 65536
 #define MAX_EVENT_NUMBER 10000
-#define ASYNLOG
 
 void SigHandler(int sig)
 {
@@ -22,13 +21,6 @@ Server* Server::GetServer()
 int Server::Init(int argc,char** args)
 {
     //Configure();
-
-    #ifdef ASYNLOG
-        Log::GetInstance()->init("ServerLog", 2000, 800000, 8); //异步日志模型
-    #else
-        Log::GetInstance()->init("ServerLog", 2000, 800000, 0); //同步日志模型
-    #endif
-
     connpool=ConnectionPool::GetInstance();
     //init参数：ip，端口（0表示默认），数据库用户名，数据库密码，数据库名，连接池中连接个数
     connpool->init("localhost",0,"root","123","db",5);
@@ -54,6 +46,8 @@ Server::~Server()
     delete timer_container;
     delete requet_queue;
     delete []users;
+    printf("main thread %d exit\n",pthread_self());
+    LOG_INFO("main thread %d exit",pthread_self());
 }
 
 void Server::StartListen(int argc,char** argv)
@@ -143,21 +137,33 @@ void Server::AcceptCallback()
 {
     struct sockaddr_in client_address;//定义客户端套接字，accept函数将会把客户端套接字存放在该变量中
     socklen_t client_addr_length=sizeof(client_address);
-    int connection_fd=accept(listenfd,(struct sockaddr*) &client_address,&client_addr_length);
-    if(connection_fd<0)
+    int connection_fd=0;
+    while(true)
     {
-        LOG_ERROR("connection accept failed ,errno is : %d",errno);
-        return;
+        connection_fd=accept(listenfd,(struct sockaddr*) &client_address,&client_addr_length);
+        if(connection_fd<0)
+        {
+            if(errno==EAGAIN || errno==EWOULDBLOCK)//这两个错误码表明数据读取结束
+                break;
+            else
+            {
+                LOG_ERROR("connection accept failed ,errno is : %d",errno);
+                return;
+            }
+        }
+        if(HttpConn::m_user_count>=MAX_FD)
+        {
+            ShowError(connection_fd,"Internet server busy");
+            LOG_INFO("%s","connection number arrived max capacity");
+            return;
+        }
+        //如下两行是为了避免timewait状态，仅用于调试，实际使用时应该去掉
+        int reuse=1;
+        setsockopt(connection_fd,SOL_SOCKET,SO_REUSEADDR,&reuse,sizeof(reuse));
+        Addfd(connection_fd,true);
+        users[connection_fd].Init(connection_fd,client_address);
+        users[connection_fd].timer=timer_container->AddTimer(&users[connection_fd],3*TIMESLOT);//将该定时器节点加到链表中
     }
-    if(HttpConn::m_user_count>=MAX_FD)
-    {
-        ShowError(connection_fd,"Internet server busy");
-        LOG_INFO("%s","connection number arrived max capacity");
-        return;
-    }
-    Addfd(connection_fd,true);
-    users[connection_fd].Init(connection_fd,client_address);
-    users[connection_fd].timer=timer_container->AddTimer(&users[connection_fd],3*TIMESLOT);//将该定时器节点加到链表中
 }
 
 void Server::SignalCallback(bool& stop_server, bool& timeout)
