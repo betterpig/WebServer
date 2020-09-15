@@ -5,6 +5,11 @@
 
 int main(int argc,char** argv)
 {
+    /*if(daemon(1,0) == -1)
+    {
+        perror("daemon error");
+        exit(EXIT_FAILURE);
+    }*/
     if(argc<=2)
     {
         printf("usage: %s ip_address port_number\n",basename(argv[0]));
