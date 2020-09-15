@@ -36,11 +36,8 @@ private:
     void CloseCallback(int sockfd);
     void ReadCallback(int sockfd);
     void WriteCallback(int sockfd);
-    void ShowError(int connfd,const char* info);
 
     void AddSig(int sig,void (*handler) (int),bool restart=true);
     int SetNonBlocking(int fd);
     void Addfd(int fd,bool oneshot);
-    
-    
 };  

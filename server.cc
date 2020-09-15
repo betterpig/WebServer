@@ -153,8 +153,10 @@ void Server::AcceptCallback()
         }
         if(HttpConn::m_user_count>=MAX_FD)
         {
-            ShowError(connection_fd,"Internet server busy");
-            LOG_INFO("%s","connection number arrived max capacity");
+            LOG_INFO("server is busy,connection %d will be closed",connection_fd);
+            char info[]="server is busy,connection refused";
+            send(connection_fd,info,strlen(info),0);
+            close(connection_fd);
             return;
         }
         //如下两行是为了避免timewait状态，仅用于调试，实际使用时应该去掉
@@ -242,13 +244,6 @@ void Server::WriteCallback(int sockfd)
             timer_container->AdjustTimer(users[sockfd].timer,3*TIMESLOT);
     }
     #endif
-}
-
-void Server::ShowError(int connfd,const char* info)
-{
-    LOG_INFO("server is busy,connection %d will be closed",connfd);
-    send(connfd,info,strlen(info),0);
-    close(connfd);
 }
 
 void Server::AddSig(int sig,void (*handler) (int),bool restart)//设置给定信号对应的信号处理函数
