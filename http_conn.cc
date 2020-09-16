@@ -23,7 +23,7 @@ TimerContainer* HttpConn::timer_container=nullptr;
 
 void HttpConn::CloseConn(bool real_close)
 {
-    LOG_INFO("close connection %d",ntohs(m_address.sin_port));
+    //LOG_INFO("close connection %d",ntohs(m_address.sin_port));
     if(real_close && (m_sockfd!=-1))//检查连接描述符是否有效
     {
         Server::GetServer()->Removefd(m_sockfd);
@@ -562,43 +562,42 @@ bool HttpConn::Write()//通过writev把要发送的东西发送出去
         
         if(temp<=-1)
         {
-            if(errno==EAGAIN)//下次这来，发送缓冲区已满
+            if(errno==EAGAIN || errno==EWOULDBLOCK)//下次这来，发送缓冲区已满
             {
-                if(bytes_have_send>=m_iv[0].iov_len)//调整iovec数组中内存块的起始地址和长度，避免重复发送已经发送过的数据
-                {
-                    m_iv[1].iov_len=m_iv[1].iov_len-(bytes_have_send-m_iv[0].iov_len);
-                    m_iv[1].iov_base=m_file_address+(bytes_have_send-m_iv[0].iov_len);
-                    m_iv[0].iov_len=0;
-                }
-                else
-                {
-                    m_iv[0].iov_len=m_iv[0].iov_len-bytes_have_send;
-                    m_iv[0].iov_base=m_write_buf+bytes_have_send;
-                }
                 Server::GetServer()->Modfd(m_sockfd,EPOLLOUT);
                 return true;
             }
             Unmap();//释放映射内存
-            LOG_ERROR("unexpected writev error,client connection %d",m_sockfd);
+            LOG_ERROR("writev error %d",errno);
+            //perror("writev :");
             return false;
         }
 
         bytes_to_send-=temp;//更新未发送的字节数已发送字节数
         bytes_have_send+=temp;
+        if(bytes_have_send>=m_iv[0].iov_len)//调整iovec数组中内存块的起始地址和长度，避免重复发送已经发送过的数据
+        {
+            m_iv[1].iov_len=m_iv[1].iov_len-(bytes_have_send-m_iv[0].iov_len);
+            m_iv[1].iov_base=m_file_address+(bytes_have_send-m_iv[0].iov_len);
+            m_iv[0].iov_len=0;
+        }
+        else
+        {
+            m_iv[0].iov_len=m_iv[0].iov_len-bytes_have_send;
+            m_iv[0].iov_base=m_write_buf+bytes_have_send;
+        }
+
         if(bytes_to_send==0)//如果已发送字节数大于未发送的，说明已经发完了
         {
             Unmap();
+            Server::GetServer()->Modfd(m_sockfd,EPOLLIN);//重置oneshot，重新监听可读事件
             if(m_linger)//根据linger决定是否要关闭连接
             {
                 Init();
-                Server::GetServer()->Modfd(m_sockfd,EPOLLIN);//重置oneshot，重新监听可读事件
                 return true;
             }
             else
-            {
-                //Server::GetServer()->Modfd(m_sockfd,EPOLLIN);//都要关闭连接了，干嘛还要修改
                 return false;
-            }
         }
     }
 }

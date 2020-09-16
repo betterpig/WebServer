@@ -79,7 +79,7 @@ void Server::StartListen(int argc,char** argv)
         exit(EXIT_FAILURE);
     }
     
-    ret=listen(listenfd,5);//将主动套接字转换为被动套接字，并指定established队列上限
+    ret=listen(listenfd,1000);//将主动套接字转换为被动套接字，并指定established队列上限
     if(ret==-1)
     {
         perror("listen socketfd");
@@ -121,7 +121,7 @@ void Server::EventLoop()
                 AcceptCallback();
             else if(fd==sigpipe[0] && events[i].events & EPOLLIN)
                 SignalCallback(stop_server,time_out);
-            else if(events[i].events & (EPOLLHUP | EPOLLERR))
+            else if(events[i].events & (EPOLLHUP | EPOLLERR | EPOLLRDHUP))
                 CloseCallback(fd);
             else if(events[i].events & EPOLLIN)
                 ReadCallback(fd);
@@ -231,7 +231,7 @@ void Server::WriteCallback(int sockfd)
 {
     #ifdef REACTOR
     {
-        requet_queue->push(users+sockfd);
+        //requet_queue->push(users+sockfd);
     }
     #else
     {

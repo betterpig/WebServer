@@ -1,6 +1,6 @@
 #include "server.h"
 #include "log.h"
-
+#define _GNU_SOURCE
 #define ASYNLOG
 
 int main(int argc,char** argv)
@@ -21,8 +21,6 @@ int main(int argc,char** argv)
         Log::GetInstance()->init("ServerLog", 2000, 8000, 0); //同步日志模型
     #endif
 
-    for(int i=0;i<10;i++)
-        LOG_INFO("LALALA %d",i);
     Server* server=Server::GetServer();
     server->Init(argc,argv);
     server->EventLoop();
